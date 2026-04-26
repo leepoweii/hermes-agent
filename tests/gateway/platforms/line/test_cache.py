@@ -1,12 +1,8 @@
-import asyncio
 import time
-
-import pytest
 
 from gateway.platforms.line.cache import (
     RequestCache,
     State,
-    CacheEntry,
 )
 
 
@@ -43,7 +39,7 @@ def test_mark_delivered_transitions_state():
 
 
 def test_prune_removes_only_old_ready_and_delivered(monkeypatch):
-    cache = RequestCache(ttl_seconds=10)
+    cache = RequestCache(ttl_seconds=10)  # default pending_ttl=86400
     rid_pending = cache.register_pending()
     rid_old_ready = cache.register_pending()
     cache.set_ready(rid_old_ready, "stale")
@@ -55,10 +51,14 @@ def test_prune_removes_only_old_ready_and_delivered(monkeypatch):
     now = time.time()
     cache._entries[rid_old_ready].updated_at = now - 11
     cache._entries[rid_old_delivered].updated_at = now - 11
+    # Backdate PENDING's created_at past the regular TTL (10s) but well
+    # under the ceiling TTL (default 86400s) — proves the regular TTL
+    # does NOT apply to PENDING.
+    cache._entries[rid_pending].created_at = now - 11
 
     cache.prune()
 
-    assert cache.get(rid_pending) is not None  # PENDING never pruned
+    assert cache.get(rid_pending) is not None  # PENDING not pruned via terminal TTL
     assert cache.get(rid_old_ready) is None
     assert cache.get(rid_old_delivered) is None
 
@@ -69,3 +69,14 @@ def test_prune_keeps_recent_entries():
     cache.set_ready(rid, "x")
     cache.prune()
     assert cache.get(rid) is not None
+
+
+def test_prune_removes_old_pending_via_ceiling_ttl():
+    cache = RequestCache(ttl_seconds=10, pending_ttl_seconds=20)
+    rid = cache.register_pending()
+    # Backdate created_at past the ceiling TTL
+    cache._entries[rid].created_at = time.time() - 25
+
+    cache.prune()
+
+    assert cache.get(rid) is None

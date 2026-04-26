@@ -8,8 +8,19 @@ State machine (per design spec):
 Storage: dict in the adapter process. Not Redis-backed — container restart
 drops PENDING entries (acceptable trade-off; users see "答案已過期").
 
-TTL: only applies to READY/DELIVERED. PENDING never times out via TTL —
-it transitions on LLM completion or task cancellation.
+Two TTLs:
+    - ``ttl_seconds`` (default 1h) — applies to READY/DELIVERED entries,
+      keyed off ``updated_at`` (when the entry transitioned).
+    - ``pending_ttl_seconds`` (default 24h) — ceiling TTL for PENDING
+      entries, keyed off ``created_at`` (when registered).
+
+Contract: callers SHOULD always reach a terminal state (READY or DELIVERED)
+via ``set_ready()`` / ``mark_delivered()``. The PENDING ceiling TTL is a
+defensive bound to prevent pathological leaks when a task is cancelled or
+otherwise never completes — without it, a long-running container would
+accumulate PENDING entries forever.
+
+Not safe across threads — single-event-loop only.
 
 Pattern borrowed from gateway/platforms/webhook.py (_delivery_info,
 _idempotency_ttl=3600, _prune_delivery_info).
@@ -38,11 +49,23 @@ class CacheEntry:
 
 
 class RequestCache:
-    """In-memory `dict[request_id, CacheEntry]` with TTL pruning of terminal states."""
+    """In-memory `dict[request_id, CacheEntry]` with TTL pruning.
 
-    def __init__(self, ttl_seconds: int = 3600) -> None:
+    Two TTLs are enforced by ``prune()``:
+        - READY/DELIVERED entries older than ``ttl_seconds`` (by ``updated_at``)
+        - PENDING entries older than ``pending_ttl_seconds`` (by ``created_at``)
+
+    Not safe across threads — single-event-loop only.
+    """
+
+    def __init__(
+        self,
+        ttl_seconds: int = 3600,
+        pending_ttl_seconds: int = 86400,
+    ) -> None:
         self._entries: dict[str, CacheEntry] = {}
         self._ttl = ttl_seconds
+        self._pending_ttl = pending_ttl_seconds
 
     def register_pending(self) -> str:
         rid = str(uuid.uuid4())
@@ -68,13 +91,26 @@ class RequestCache:
         entry.updated_at = time.time()
 
     def prune(self) -> None:
-        """Remove READY/DELIVERED entries older than TTL. PENDING is never pruned."""
-        cutoff = time.time() - self._ttl
+        """Remove stale entries.
+
+        - READY/DELIVERED: pruned when ``updated_at`` is older than ``ttl_seconds``.
+        - PENDING: pruned when ``created_at`` is older than ``pending_ttl_seconds``
+          (ceiling TTL — defends against tasks that never reach a terminal state).
+        """
+        now = time.time()
+        terminal_cutoff = now - self._ttl
+        pending_cutoff = now - self._pending_ttl
         stale = [
             rid
             for rid, entry in self._entries.items()
-            if entry.state in (State.READY, State.DELIVERED)
-            and entry.updated_at < cutoff
+            if (
+                entry.state in (State.READY, State.DELIVERED)
+                and entry.updated_at < terminal_cutoff
+            )
+            or (
+                entry.state is State.PENDING
+                and entry.created_at < pending_cutoff
+            )
         ]
         for rid in stale:
             del self._entries[rid]
