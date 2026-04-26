@@ -102,6 +102,9 @@ async def test_postback_pending_re_attaches_button(line_adapter_with_fast_llm):
     sent = _json.loads(route.calls.last.request.content)
     msg = sent["messages"][0]
     assert "quickReply" in msg  # button must be re-attached so user can retry
+    button_data = _json.loads(msg["quickReply"]["items"][0]["action"]["data"])
+    assert button_data["request_id"] == rid
+    assert button_data["action"] == "show_response"
 
 
 @pytest.mark.asyncio
@@ -141,3 +144,23 @@ async def test_postback_unknown_request_id_says_expired(line_adapter_with_fast_l
     await line_adapter_with_fast_llm.dispatch_event(_postback_event("never-existed"))
     sent = _json.loads(route.calls.last.request.content)
     assert "過期" in sent["messages"][0]["text"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("data_value", ['"just a string"', "null", "[1,2,3]", "42"])
+async def test_postback_non_dict_payload_treated_as_unknown(line_adapter_with_fast_llm, data_value):
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    event = {
+        "type": "postback",
+        "replyToken": "rt-pb",
+        "source": {"type": "user", "userId": "U1"},
+        "timestamp": 2,
+        "postback": {"data": data_value},
+    }
+    # Should not raise; treat as unknown action and silently ignore
+    await line_adapter_with_fast_llm.dispatch_event(event)
+    # Since action != "show_response" path returns silently, route is NOT called
+    assert not route.called

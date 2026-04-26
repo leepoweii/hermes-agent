@@ -190,6 +190,8 @@ class LineAdapter(BasePlatformAdapter):
             return
         try:
             payload = json.loads(event.get("postback", {}).get("data", "{}"))
+            if not isinstance(payload, dict):
+                payload = {}
         except json.JSONDecodeError:
             payload = {}
         if payload.get("action") != "show_response":
