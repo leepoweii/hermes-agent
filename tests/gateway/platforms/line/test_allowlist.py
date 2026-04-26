@@ -37,3 +37,15 @@ def test_empty_allowlists_deny_all():
                 {"type": "group", "groupId": "C1", "userId": "U1"},
                 {"type": "room", "roomId": "R1", "userId": "U1"}]:
         assert is_allowed({"source": src}, cfg) is False
+
+
+def test_source_type_present_but_id_missing_denied():
+    cfg = {"users": ["U1"], "groups": ["C1"], "rooms": ["R1"]}
+    assert is_allowed({"source": {"type": "user"}}, cfg) is False
+    assert is_allowed({"source": {"type": "group"}}, cfg) is False
+    assert is_allowed({"source": {"type": "room"}}, cfg) is False
+
+
+def test_missing_source_key_denied():
+    cfg = {"users": ["U1"], "groups": [], "rooms": []}
+    assert is_allowed({}, cfg) is False
