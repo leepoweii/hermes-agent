@@ -22,8 +22,11 @@ from gateway.platforms.base import (
     SendResult,
 )
 from gateway.session import SessionSource
+from aiohttp import web
+
 from gateway.platforms.line.allowlist import is_allowed
 from gateway.platforms.line.cache import RequestCache, State
+from gateway.platforms.line.webhook import parse_events, verify_signature
 from gateway.platforms.line.reply import (
     ALREADY_DELIVERED_TEXT,
     EXPIRED_REPLY_TEXT,
@@ -79,8 +82,33 @@ class LineAdapter(BasePlatformAdapter):
 
     # ---- Abstract method overrides ----
 
-    async def connect(self) -> bool:
-        # HTTP server registration wired in Task 10.
+    def register_routes(self, app: web.Application) -> None:
+        """Register LINE webhook routes on a shared/owned aiohttp app.
+
+        Called from connect() once the gateway runner provides an app, or
+        directly by tests / external owners of the aiohttp.web.Application.
+        """
+        app.router.add_post("/line/webhook", self._http_handler)
+
+    async def _http_handler(self, request: web.Request) -> web.Response:
+        body = await request.read()
+        signature = request.headers.get("X-Line-Signature", "")
+        if not verify_signature(body, signature, self._cfg.channel_secret):
+            return web.Response(status=401, text="invalid signature")
+        events = parse_events(body)
+        for ev in events:
+            # dispatch_event spawns its own background tasks; awaiting here
+            # only schedules them. Webhook returns 200 immediately so LINE
+            # does not retry.
+            await self.dispatch_event(ev)
+        return web.Response(status=200, text="ok")
+
+    async def connect(self, app: web.Application | None = None) -> bool:
+        # HTTP route registration: if the gateway runner gives us a shared
+        # aiohttp app we register on it. If not, the owner must call
+        # register_routes(app) explicitly.
+        if app is not None:
+            self.register_routes(app)
         if not os.environ.get("HERMES_AUTO_APPROVE_TOOLS"):
             log.warning(
                 "LINE adapter suppresses self.send() to avoid Push API costs. "
