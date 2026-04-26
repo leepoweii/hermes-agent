@@ -874,6 +874,15 @@ def _validate_gateway_config(config: "GatewayConfig") -> None:
 def _apply_env_overrides(config: GatewayConfig) -> None:
     """Apply environment variable overrides to config."""
     
+    # LINE (auto-enable when both channel access token + secret are set)
+    line_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+    line_secret = os.getenv("LINE_CHANNEL_SECRET")
+    if line_token and line_secret:
+        if Platform.LINE not in config.platforms:
+            config.platforms[Platform.LINE] = PlatformConfig()
+        config.platforms[Platform.LINE].enabled = True
+        config.platforms[Platform.LINE].token = line_token
+
     # Telegram
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if telegram_token:

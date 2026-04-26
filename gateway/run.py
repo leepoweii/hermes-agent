@@ -3161,6 +3161,15 @@ class GatewayRunner:
                 return None
             return BlueBubblesAdapter(config)
 
+        elif platform == Platform.LINE:
+            from gateway.platforms.line.adapter import LineAdapter, LineAdapterConfig
+            try:
+                line_cfg = LineAdapterConfig.from_env()
+            except ValueError as exc:
+                logger.warning("LINE: %s", exc)
+                return None
+            return LineAdapter(line_cfg)
+
         elif platform == Platform.QQBOT:
             from gateway.platforms.qqbot import QQAdapter, check_qq_requirements
             if not check_qq_requirements():

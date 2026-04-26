@@ -49,6 +49,26 @@ class LineAdapterConfig:
     slow_response_threshold_seconds: float = 50.0
     request_cache_ttl_seconds: int = 3600
 
+    @classmethod
+    def from_env(cls) -> "LineAdapterConfig":
+        def _required(name: str) -> str:
+            v = os.environ.get(name)
+            if not v:
+                raise ValueError(f"{name} must be set")
+            return v
+
+        def _csv(name: str) -> list[str]:
+            raw = os.environ.get(name, "").strip()
+            return [item.strip() for item in raw.split(",") if item.strip()]
+
+        return cls(
+            channel_access_token=_required("LINE_CHANNEL_ACCESS_TOKEN"),
+            channel_secret=_required("LINE_CHANNEL_SECRET"),
+            allowed_users=_csv("LINE_ALLOWED_USERS"),
+            allowed_groups=_csv("LINE_ALLOWED_GROUPS"),
+            allowed_rooms=_csv("LINE_ALLOWED_ROOMS"),
+        )
+
 
 class LineAdapter(BasePlatformAdapter):
     name = "line"
@@ -67,6 +87,7 @@ class LineAdapter(BasePlatformAdapter):
         # Test sync events — created lazily on first dispatch (needs running loop).
         self._test_button_sent_event: Optional[asyncio.Event] = None
         self._test_idle_event: Optional[asyncio.Event] = None
+        self._runner: Optional[web.AppRunner] = None
 
     def _ensure_test_events(self) -> None:
         if self._test_idle_event is None:
@@ -105,9 +126,19 @@ class LineAdapter(BasePlatformAdapter):
 
     async def connect(self, app: web.Application | None = None) -> bool:
         # HTTP route registration: if the gateway runner gives us a shared
-        # aiohttp app we register on it. If not, the owner must call
-        # register_routes(app) explicitly.
-        if app is not None:
+        # aiohttp app we register on it. Otherwise we own the listener
+        # ourselves (mirrors WebhookAdapter's standalone-server pattern).
+        if app is None:
+            app = web.Application()
+            self.register_routes(app)
+            port = int(os.environ.get("LINE_WEBHOOK_PORT", "8645"))
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, "0.0.0.0", port)
+            await site.start()
+            self._runner = runner
+            log.info("LINE webhook listening on :%d/line/webhook", port)
+        else:
             self.register_routes(app)
         if not os.environ.get("HERMES_AUTO_APPROVE_TOOLS"):
             log.warning(
@@ -126,6 +157,11 @@ class LineAdapter(BasePlatformAdapter):
                 await t
             except (asyncio.CancelledError, Exception):
                 pass
+        if self._runner is not None:
+            try:
+                await self._runner.cleanup()
+            finally:
+                self._runner = None
 
     async def send(
         self,
