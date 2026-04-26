@@ -1781,6 +1781,78 @@ def _setup_telegram():
             save_env_value("TELEGRAM_HOME_CHANNEL", home_channel)
 
 
+def _setup_line():
+    """Configure LINE Messaging API credentials and allowlist."""
+    print_header("LINE")
+    existing = get_env_value("LINE_CHANNEL_ACCESS_TOKEN")
+    if existing:
+        print_info("LINE: already configured")
+        if not prompt_yes_no("Reconfigure LINE?", False):
+            if not get_env_value("LINE_ALLOWED_USERS"):
+                print_info("⚠️  LINE has no user allowlist - anyone who adds your bot can use it!")
+                if prompt_yes_no("Add allowed users now?", True):
+                    print_info("   您自己的 LINE User ID。從 LINE Developers Console")
+                    print_info("   → 您的 channel → Basic settings → 'Your user ID'")
+                    allowed_users = prompt("Allowed user IDs (comma-separated)")
+                    if allowed_users:
+                        save_env_value("LINE_ALLOWED_USERS", allowed_users.replace(" ", ""))
+                        print_success("LINE allowlist configured")
+            return
+
+    print_info("Create a Messaging API channel at https://developers.line.biz/console/")
+    print_info("   Channel access token: Messaging API tab → 'Channel access token' → Issue")
+    print_info("   Channel secret:       Basic settings tab → 'Channel secret'")
+    print()
+
+    token = prompt("LINE channel access token", password=True)
+    if not token:
+        return
+    save_env_value("LINE_CHANNEL_ACCESS_TOKEN", token)
+    print_success("LINE channel access token saved")
+
+    secret = prompt("LINE channel secret", password=True)
+    if not secret:
+        print_info("⚠️  Channel secret is required for webhook signature verification.")
+        return
+    save_env_value("LINE_CHANNEL_SECRET", secret)
+    print_success("LINE channel secret saved")
+
+    print()
+    print_info("🔒 Security: Restrict who can use your bot")
+    print_info("   您自己的 LINE User ID。從 LINE Developers Console")
+    print_info("   → 您的 channel → Basic settings → 'Your user ID'")
+    print()
+    allowed_users = prompt(
+        "Allowed user IDs (comma-separated, leave empty for open access)"
+    )
+    if allowed_users:
+        save_env_value("LINE_ALLOWED_USERS", allowed_users.replace(" ", ""))
+        print_success("LINE allowlist configured - only listed users can use the bot")
+    else:
+        print_info("⚠️  No allowlist set - anyone who adds your bot as friend can use it!")
+
+    print()
+    print_info("👥 Group allowlist (optional)")
+    print_info("   群組 ID（C 開頭）。先空白部署，加 bot 進群組後傳訊息，")
+    print_info("   docker logs 找 'line.drop' 取得 ID 再回來填")
+    allowed_groups = prompt(
+        "Allowed group IDs (comma-separated, leave empty)"
+    )
+    if allowed_groups:
+        save_env_value("LINE_ALLOWED_GROUPS", allowed_groups.replace(" ", ""))
+        print_success("LINE group allowlist configured")
+
+    print()
+    print_info("💬 Room allowlist (optional)")
+    print_info("   聊天室 ID（R 開頭，多人聊天室；非 LINE 群組）")
+    allowed_rooms = prompt(
+        "Allowed room IDs (comma-separated, leave empty)"
+    )
+    if allowed_rooms:
+        save_env_value("LINE_ALLOWED_ROOMS", allowed_rooms.replace(" ", ""))
+        print_success("LINE room allowlist configured")
+
+
 def _setup_discord():
     """Configure Discord bot credentials and allowlist."""
     print_header("Discord")
@@ -2273,6 +2345,7 @@ def _setup_webhooks():
 # Platform registry for the gateway checklist
 _GATEWAY_PLATFORMS = [
     ("Telegram", "TELEGRAM_BOT_TOKEN", _setup_telegram),
+    ("LINE", "LINE_CHANNEL_ACCESS_TOKEN", _setup_line),
     ("Discord", "DISCORD_BOT_TOKEN", _setup_discord),
     ("Slack", "SLACK_BOT_TOKEN", _setup_slack),
     ("Signal", "SIGNAL_HTTP_URL", _setup_signal),
@@ -2326,6 +2399,7 @@ def setup_gateway(config: dict):
     # ── Gateway Service Setup ──
     any_messaging = (
         get_env_value("TELEGRAM_BOT_TOKEN")
+        or get_env_value("LINE_CHANNEL_ACCESS_TOKEN")
         or get_env_value("DISCORD_BOT_TOKEN")
         or get_env_value("SLACK_BOT_TOKEN")
         or get_env_value("SIGNAL_HTTP_URL")
