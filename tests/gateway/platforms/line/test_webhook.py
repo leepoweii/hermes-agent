@@ -53,3 +53,18 @@ def test_parse_events_extracts_message_event():
     assert len(events) == 1
     assert events[0]["type"] == "message"
     assert events[0]["source"]["userId"] == "Uabc"
+
+
+def test_verify_signature_accepts_valid_empty_body():
+    secret = "test_secret"
+    body = b""
+    sig = _sign(secret, body)
+    assert verify_signature(body, sig, secret) is True
+
+
+def test_parse_events_returns_empty_for_malformed_json():
+    assert parse_events(b"not json") == []
+
+
+def test_parse_events_returns_empty_for_non_dict_payload():
+    assert parse_events(b"[1,2,3]") == []

@@ -15,7 +15,7 @@ def verify_signature(body: bytes, signature: str, channel_secret: str) -> bool:
     """Constant-time compare LINE's X-Line-Signature header against an HMAC-SHA256
     of the raw body using the channel secret.
     """
-    if not signature or not body:
+    if not signature:
         return False
     expected = base64.b64encode(
         hmac.new(channel_secret.encode("utf-8"), body, hashlib.sha256).digest()
@@ -30,5 +30,7 @@ def parse_events(body: bytes) -> list[dict[str, Any]]:
     try:
         payload = json.loads(body)
     except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(payload, dict):
         return []
     return payload.get("events", []) or []
