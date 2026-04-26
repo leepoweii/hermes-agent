@@ -8,6 +8,7 @@ Pattern reference:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, Optional
@@ -17,6 +18,8 @@ from gateway.platforms.base import BasePlatformAdapter, SendResult
 from gateway.platforms.line.allowlist import is_allowed
 from gateway.platforms.line.cache import RequestCache, State
 from gateway.platforms.line.reply import (
+    ALREADY_DELIVERED_TEXT,
+    EXPIRED_REPLY_TEXT,
     LineReplyClient,
     PENDING_REPLY_TEXT,
     build_quick_reply_button_message,
@@ -181,7 +184,40 @@ class LineAdapter(BasePlatformAdapter):
     # ---- Postback handler (stub for Task 8) ----
 
     async def _handle_postback(self, event: dict[str, Any]) -> None:
-        raise NotImplementedError("Implemented in Task 8")
+        reply_token = event.get("replyToken")
+        if not reply_token:
+            log.info("line: postback without replyToken: source=%s", event.get("source"))
+            return
+        try:
+            payload = json.loads(event.get("postback", {}).get("data", "{}"))
+        except json.JSONDecodeError:
+            payload = {}
+        if payload.get("action") != "show_response":
+            return  # not ours, ignore
+        request_id = payload.get("request_id")
+        entry = self._cache.get(request_id) if request_id else None
+
+        if entry is None:
+            await self._reply.reply(reply_token, [{"type": "text", "text": EXPIRED_REPLY_TEXT}])
+            return
+
+        if entry.state is State.PENDING:
+            msg = build_quick_reply_button_message(
+                text=PENDING_REPLY_TEXT,
+                button_label="📋 點此查看答案",
+                request_id=request_id,
+            )
+            await self._reply.reply(reply_token, [msg])
+            return
+
+        if entry.state is State.READY:
+            await self._reply.reply(reply_token, [{"type": "text", "text": entry.payload}])
+            self._cache.mark_delivered(request_id)
+            return
+
+        if entry.state is State.DELIVERED:
+            await self._reply.reply(reply_token, [{"type": "text", "text": ALREADY_DELIVERED_TEXT}])
+            return
 
     # ---- Helpers ----
 
