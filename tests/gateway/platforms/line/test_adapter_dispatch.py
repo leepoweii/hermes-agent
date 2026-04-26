@@ -62,3 +62,15 @@ async def test_slow_llm_sends_quick_reply_button(line_adapter_with_slow_llm):
     payload = json.loads(quick["data"])
     assert payload["action"] == "show_response"
     assert "request_id" in payload
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_message_without_reply_token_is_dropped(line_adapter_with_fast_llm):
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    event = _msg_event(reply_token="rt-1", user="U1")
+    del event["replyToken"]  # simulate missing token
+    await line_adapter_with_fast_llm.dispatch_event(event)
+    assert not route.called

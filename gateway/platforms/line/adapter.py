@@ -51,8 +51,15 @@ class LineAdapter(BasePlatformAdapter):
         self._cache = RequestCache(ttl_seconds=config.request_cache_ttl_seconds)
         self._llm_call: Callable[[str, dict], Awaitable[str]] = self._real_llm_call
         # Note: _background_tasks already initialized by BasePlatformAdapter.__init__.
+        # Test sync events — created lazily on first dispatch (needs running loop).
         self._test_button_sent_event: Optional[asyncio.Event] = None
         self._test_idle_event: Optional[asyncio.Event] = None
+
+    def _ensure_test_events(self) -> None:
+        if self._test_idle_event is None:
+            self._test_idle_event = asyncio.Event()
+        if self._test_button_sent_event is None:
+            self._test_button_sent_event = asyncio.Event()
 
     @classmethod
     def from_config(cls, cfg: LineAdapterConfig | dict) -> "LineAdapter":
@@ -91,6 +98,11 @@ class LineAdapter(BasePlatformAdapter):
     # ---- Public dispatch ----
 
     async def dispatch_event(self, event: dict[str, Any]) -> None:
+        self._ensure_test_events()
+        assert self._test_idle_event is not None
+        assert self._test_button_sent_event is not None
+        self._test_idle_event.clear()
+        self._test_button_sent_event.clear()
         cfg = {
             "users": self._cfg.allowed_users,
             "groups": self._cfg.allowed_groups,
@@ -112,6 +124,12 @@ class LineAdapter(BasePlatformAdapter):
         text = event.get("message", {}).get("text", "")
         source = event.get("source", {})
         reply_token = event.get("replyToken")
+        if not reply_token:
+            log.info(
+                "line: dropping message event without replyToken: source=%s",
+                source,
+            )
+            return
         request_id = self._cache.register_pending()
 
         async def _llm_then_dispatch() -> None:
@@ -148,13 +166,13 @@ class LineAdapter(BasePlatformAdapter):
                         request_id=request_id,
                     )
                     await self._reply.reply(reply_token, [msg])
-                    if self._test_button_sent_event:
-                        self._test_button_sent_event.set()
+                    assert self._test_button_sent_event is not None
+                    self._test_button_sent_event.set()
             except Exception:
                 log.exception("watcher failed for request_id=%s", request_id)
             finally:
-                if self._test_idle_event:
-                    self._test_idle_event.set()
+                assert self._test_idle_event is not None
+                self._test_idle_event.set()
 
         watcher_task = asyncio.create_task(_watcher())
         self._background_tasks.add(watcher_task)
@@ -187,11 +205,11 @@ class LineAdapter(BasePlatformAdapter):
     # ---- Test helpers (no-ops in production) ----
 
     async def wait_idle(self) -> None:
-        self._test_idle_event = asyncio.Event()
-        if not self._background_tasks:
-            return
+        self._ensure_test_events()
+        assert self._test_idle_event is not None
         await self._test_idle_event.wait()
 
     async def wait_button_sent(self) -> None:
-        self._test_button_sent_event = asyncio.Event()
+        self._ensure_test_events()
+        assert self._test_button_sent_event is not None
         await self._test_button_sent_event.wait()
