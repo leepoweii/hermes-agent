@@ -18,7 +18,7 @@ async def line_adapter_user_only():
     )
     adapter = LineAdapter.from_config(cfg)
 
-    async def stub_llm(text, source):
+    async def stub_llm(text, source, event=None):
         return "ok"
 
     adapter._llm_call = stub_llm
@@ -39,7 +39,7 @@ async def line_adapter_with_fast_llm():
     )
     adapter = LineAdapter.from_config(cfg)
 
-    async def fast_llm(text, source):
+    async def fast_llm(text, source, event=None):
         return f"fast: {text}"
 
     adapter._llm_call = fast_llm
@@ -60,7 +60,7 @@ async def line_adapter_with_slow_llm():
     )
     adapter = LineAdapter.from_config(cfg)
 
-    async def slow_llm(text, source):
+    async def slow_llm(text, source, event=None):
         await asyncio.sleep(0.5)
         return f"slow: {text}"
 

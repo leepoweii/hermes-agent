@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, Optional
 
@@ -58,7 +59,7 @@ class LineAdapter(BasePlatformAdapter):
         self._cfg = config
         self._reply = LineReplyClient(channel_access_token=config.channel_access_token)
         self._cache = RequestCache(ttl_seconds=config.request_cache_ttl_seconds)
-        self._llm_call: Callable[[str, dict], Awaitable[str]] = self._real_llm_call
+        self._llm_call: Callable[..., Awaitable[str]] = self._real_llm_call
         # Note: _background_tasks already initialized by BasePlatformAdapter.__init__.
         # Test sync events — created lazily on first dispatch (needs running loop).
         self._test_button_sent_event: Optional[asyncio.Event] = None
@@ -80,6 +81,13 @@ class LineAdapter(BasePlatformAdapter):
 
     async def connect(self) -> bool:
         # HTTP server registration wired in Task 10.
+        if not os.environ.get("HERMES_AUTO_APPROVE_TOOLS"):
+            log.warning(
+                "LINE adapter suppresses self.send() to avoid Push API costs. "
+                "Tool-approval prompts cannot reach the user — set "
+                "HERMES_AUTO_APPROVE_TOOLS=1 to auto-approve, or sessions will hang "
+                "on any approval-gated tool call."
+            )
         return True
 
     async def disconnect(self) -> None:
@@ -123,9 +131,18 @@ class LineAdapter(BasePlatformAdapter):
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
         """Minimal stub — LINE Get Profile/Group APIs not wired.
 
-        Returns a placeholder so base-class introspection doesn't crash.
+        Detect chat type by LINE id prefix:
+          U… → user (dm), C… → group, R… → room.
         """
-        return {"name": chat_id, "type": "dm"}
+        if chat_id.startswith("U"):
+            ctype = "dm"
+        elif chat_id.startswith("C"):
+            ctype = "group"
+        elif chat_id.startswith("R"):
+            ctype = "room"
+        else:
+            ctype = "unknown"
+        return {"name": chat_id, "type": ctype}
 
     # ---- Public dispatch ----
 
@@ -166,7 +183,7 @@ class LineAdapter(BasePlatformAdapter):
 
         async def _llm_then_dispatch() -> None:
             try:
-                answer = await self._llm_call(text, source)
+                answer = await self._llm_call(text, source, event)
                 self._cache.set_ready(request_id, answer)
             except asyncio.CancelledError:
                 raise
@@ -263,7 +280,12 @@ class LineAdapter(BasePlatformAdapter):
             src.get("roomId"),
         )
 
-    async def _real_llm_call(self, text: str, source: dict[str, Any]) -> str:
+    async def _real_llm_call(
+        self,
+        text: str,
+        source: dict[str, Any],
+        event: Optional[dict[str, Any]] = None,
+    ) -> str:
         """Production LLM path.
 
         Bypasses BasePlatformAdapter.handle_message() session machinery
@@ -284,8 +306,15 @@ class LineAdapter(BasePlatformAdapter):
                 "LineAdapter._real_llm_call invoked before set_message_handler()"
             )
 
-        src_type = source.get("type", "user")
-        chat_type = "dm" if src_type == "user" else "group"
+        src_type = source.get("type")
+        if src_type == "user":
+            chat_type = "dm"
+        elif src_type == "group":
+            chat_type = "group"
+        elif src_type == "room":
+            chat_type = "room"
+        else:
+            chat_type = "unknown"
         # LINE source: userId always present; groupId/roomId for group/room
         chat_id = (
             source.get("groupId")
@@ -301,13 +330,17 @@ class LineAdapter(BasePlatformAdapter):
             chat_type=chat_type,
             user_id=str(user_id) if user_id else None,
         )
-        event = MessageEvent(
+        message_id = None
+        if event is not None:
+            message_id = event.get("message", {}).get("id")
+        msg_event = MessageEvent(
             text=text,
             message_type=MessageType.TEXT,
             source=session_source,
-            raw_message={"line_source": source},
+            message_id=message_id,
+            raw_message={"line_event": event} if event is not None else {"line_source": source},
         )
-        response = await self._message_handler(event)
+        response = await self._message_handler(msg_event)
         return response or ""
 
     # ---- Test helpers (no-ops in production) ----
