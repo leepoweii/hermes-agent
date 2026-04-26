@@ -20,9 +20,11 @@ Choose **LINE** when prompted. You'll be asked for:
 
 - **Channel access token** — LINE Developers Console → your channel → Messaging API → Channel access token (long-lived).
 - **Channel secret** — Same page → Basic settings → Channel secret.
-- **Allowed users (CSV)** — LINE user IDs in 1-on-1 chats that may message the bot. Find your own ID in Basic settings → "Your user ID". Leave blank for now if you don't know yet.
+- **Allowed users (CSV)** — LINE user IDs in 1-on-1 chats that may message the bot. Find your own ID in Basic settings → "Your user ID".
 - **Allowed groups (CSV)** — LINE group IDs (start with `C`). See "Discovering group/room IDs" below.
 - **Allowed rooms (CSV)** — LINE room IDs (start with `R`).
+
+> **Important:** All three allowlists are independent and **default-deny**. An empty list = **no access** for that source type (1-on-1 / group / room) — messages are silently dropped. There is no "leave empty for open access" mode; to allow every sender on a source type during debugging, set `LINE_ALLOW_ALL_USERS=true` in `~/.hermes/.env` (debug only — bypasses all three allowlists).
 
 ## Webhook URL
 

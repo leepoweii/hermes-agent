@@ -71,6 +71,29 @@ def test_prune_keeps_recent_entries():
     assert cache.get(rid) is not None
 
 
+def test_set_error_transitions_state():
+    cache = RequestCache(ttl_seconds=3600)
+    rid = cache.register_pending()
+    cache.set_error(rid, "boom")
+    entry = cache.get(rid)
+    assert entry.state is State.ERROR
+    assert entry.payload == "boom"
+
+
+def test_set_error_unknown_id_is_noop():
+    cache = RequestCache(ttl_seconds=3600)
+    cache.set_error("not-a-real-id", "ignored")  # must not raise
+
+
+def test_prune_removes_old_error_entries():
+    cache = RequestCache(ttl_seconds=10)
+    rid = cache.register_pending()
+    cache.set_error(rid, "boom")
+    cache._entries[rid].updated_at = time.time() - 11
+    cache.prune()
+    assert cache.get(rid) is None
+
+
 def test_prune_removes_old_pending_via_ceiling_ttl():
     cache = RequestCache(ttl_seconds=10, pending_ttl_seconds=20)
     rid = cache.register_pending()

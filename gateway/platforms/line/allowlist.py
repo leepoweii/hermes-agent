@@ -7,6 +7,7 @@ Decision order (per spec):
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 
 
@@ -15,7 +16,13 @@ def is_allowed(event: dict[str, Any], cfg: dict[str, list[str]]) -> bool:
 
     cfg expected shape:
         {"users": ["U..."], "groups": ["C..."], "rooms": ["R..."]}
+
+    If LINE_ALLOW_ALL_USERS env var is truthy, returns True regardless of
+    allowlist contents (debug-only escape hatch — mirrors the pattern used by
+    other Hermes platform adapters such as DISCORD_ALLOW_ALL_USERS).
     """
+    if os.getenv("LINE_ALLOW_ALL_USERS", "").lower() in ("true", "1", "yes"):
+        return True
     source = event.get("source") or {}
     src_type = source.get("type")
     if src_type == "user":

@@ -1821,15 +1821,19 @@ def _setup_line():
     print_info("🔒 Security: Restrict who can use your bot")
     print_info("   您自己的 LINE User ID。從 LINE Developers Console")
     print_info("   → 您的 channel → Basic settings → 'Your user ID'")
+    print_info("   ⚠️  ALL three allowlists are required (USERS for 1-on-1,")
+    print_info("       GROUPS for groups, ROOMS for rooms). Empty list =")
+    print_info("       no access for that source type. To allow all on a")
+    print_info("       source type, set LINE_ALLOW_ALL_USERS=true (debug only).")
     print()
     allowed_users = prompt(
-        "Allowed user IDs (comma-separated, leave empty for open access)"
+        "Allowed user IDs (comma-separated; empty = no 1-on-1 access)"
     )
     if allowed_users:
         save_env_value("LINE_ALLOWED_USERS", allowed_users.replace(" ", ""))
         print_success("LINE allowlist configured - only listed users can use the bot")
     else:
-        print_info("⚠️  No allowlist set - anyone who adds your bot as friend can use it!")
+        print_info("⚠️  Empty user allowlist - 1-on-1 messages will be DROPPED.")
 
     print()
     print_info("👥 Group allowlist (optional)")

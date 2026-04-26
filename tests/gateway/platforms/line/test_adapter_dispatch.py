@@ -164,3 +164,38 @@ async def test_postback_non_dict_payload_treated_as_unknown(line_adapter_with_fa
     await line_adapter_with_fast_llm.dispatch_event(event)
     # Since action != "show_response" path returns silently, route is NOT called
     assert not route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_llm_exception_replies_with_error(line_adapter_with_fast_llm):
+    """When LLM raises, user gets an error message instead of silence."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+
+    async def failing_llm(text, source, event=None):
+        raise RuntimeError("oops")
+
+    line_adapter_with_fast_llm._llm_call = failing_llm
+    event = _msg_event(reply_token="rt-err", user="U1")
+    await line_adapter_with_fast_llm.dispatch_event(event)
+    await line_adapter_with_fast_llm.wait_idle()
+    assert route.called
+    sent = json.loads(route.calls.last.request.content)
+    assert "失敗" in sent["messages"][0]["text"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_postback_error_state_delivers_error(line_adapter_with_fast_llm):
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    rid = line_adapter_with_fast_llm._cache.register_pending()
+    line_adapter_with_fast_llm._cache.set_error(rid, "⚠️ failed")
+    await line_adapter_with_fast_llm.dispatch_event(_postback_event(rid))
+    assert route.called
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["messages"][0]["text"] == "⚠️ failed"
+    assert line_adapter_with_fast_llm._cache.get(rid).state.value == "delivered"

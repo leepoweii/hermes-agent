@@ -251,8 +251,11 @@ class LineAdapter(BasePlatformAdapter):
                 self._cache.set_ready(request_id, answer)
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as e:
                 log.exception("LLM call failed for request_id=%s", request_id)
+                self._cache.set_error(
+                    request_id, f"⚠️ 處理失敗：{type(e).__name__}"
+                )
 
         llm_task = asyncio.create_task(_llm_then_dispatch())
         self._background_tasks.add(llm_task)
@@ -267,6 +270,12 @@ class LineAdapter(BasePlatformAdapter):
                     )
                     entry = self._cache.get(request_id)
                     if entry and entry.state is State.READY:
+                        await self._reply.reply(
+                            reply_token,
+                            [{"type": "text", "text": entry.payload}],
+                        )
+                        self._cache.mark_delivered(request_id)
+                    elif entry and entry.state is State.ERROR:
                         await self._reply.reply(
                             reply_token,
                             [{"type": "text", "text": entry.payload}],
@@ -329,6 +338,11 @@ class LineAdapter(BasePlatformAdapter):
 
         if entry.state is State.DELIVERED:
             await self._reply.reply(reply_token, [{"type": "text", "text": ALREADY_DELIVERED_TEXT}])
+            return
+
+        if entry.state is State.ERROR:
+            await self._reply.reply(reply_token, [{"type": "text", "text": entry.payload}])
+            self._cache.mark_delivered(request_id)
             return
 
     # ---- Helpers ----

@@ -38,6 +38,7 @@ class State(enum.Enum):
     PENDING = "pending"
     READY = "ready"
     DELIVERED = "delivered"
+    ERROR = "error"
 
 
 @dataclass
@@ -83,6 +84,14 @@ class RequestCache:
         entry.payload = payload
         entry.updated_at = time.time()
 
+    def set_error(self, request_id: str, error_msg: str) -> None:
+        entry = self._entries.get(request_id)
+        if entry is None:
+            return
+        entry.state = State.ERROR
+        entry.payload = error_msg
+        entry.updated_at = time.time()
+
     def mark_delivered(self, request_id: str) -> None:
         entry = self._entries.get(request_id)
         if entry is None:
@@ -104,7 +113,7 @@ class RequestCache:
             rid
             for rid, entry in self._entries.items()
             if (
-                entry.state in (State.READY, State.DELIVERED)
+                entry.state in (State.READY, State.DELIVERED, State.ERROR)
                 and entry.updated_at < terminal_cutoff
             )
             or (
