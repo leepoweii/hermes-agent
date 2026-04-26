@@ -199,3 +199,21 @@ async def test_postback_error_state_delivers_error(line_adapter_with_fast_llm):
     sent = json.loads(route.calls.last.request.content)
     assert sent["messages"][0]["text"] == "⚠️ failed"
     assert line_adapter_with_fast_llm._cache.get(rid).state.value == "delivered"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_unconfigured_bot_replies_with_setup_notice(line_adapter_with_fast_llm):
+    """When _message_handler is None (no LLM configured), allowed users see setup notice."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    line_adapter_with_fast_llm._message_handler = None  # Simulate no LLM
+    # Restore default _llm_call so the pre-check (which only triggers when
+    # the default path is active) can fire.
+    line_adapter_with_fast_llm._llm_call = line_adapter_with_fast_llm._real_llm_call
+    event = _msg_event(reply_token="rt-1", user="U1")
+    await line_adapter_with_fast_llm.dispatch_event(event)
+    assert route.called
+    sent = json.loads(route.calls.last.request.content)
+    assert "尚未完成設定" in sent["messages"][0]["text"]

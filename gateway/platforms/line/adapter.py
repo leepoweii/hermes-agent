@@ -225,6 +225,24 @@ class LineAdapter(BasePlatformAdapter):
             self._log_drop(event)
             return  # silent drop
 
+        # Pre-check: bot enabled but no LLM provider configured (Phase 1 /
+        # pre-`hermes setup`). Reply with a friendly setup notice instead
+        # of letting the dispatcher raise RuntimeError downstream. Applies
+        # to both message and postback events. Allowlist already enforced
+        # above, so unauthorized users still silent-drop. Only triggers
+        # when the default _real_llm_call path is active — tests that
+        # override _llm_call with a stub bypass this check.
+        if self._message_handler is None and self._llm_call == self._real_llm_call:
+            reply_token = event.get("replyToken")
+            if reply_token:
+                await self._reply.reply(
+                    reply_token,
+                    [{"type": "text", "text": "Bot 尚未完成設定，請聯繫管理員。"}],
+                )
+            assert self._test_idle_event is not None
+            self._test_idle_event.set()
+            return
+
         if event.get("type") == "message":
             await self._handle_message(event)
         elif event.get("type") == "postback":
