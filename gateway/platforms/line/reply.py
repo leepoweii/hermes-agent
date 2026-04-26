@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
+LINE_LOADING_URL = "https://api.line.me/v2/bot/chat/loading/start"
 
 PENDING_REPLY_TEXT = "🤔 還在思考中，請稍候。如果太久沒回應，請重發訊息。"
 EXPIRED_REPLY_TEXT = "答案已過期，請重新提問。"
@@ -61,3 +62,18 @@ class LineReplyClient:
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             r = await client.post(LINE_REPLY_URL, headers=self._headers, json=body)
             r.raise_for_status()
+
+    async def show_loading(self, chat_id: str, seconds: int = 30) -> None:
+        """Show typing animation in 1-on-1 chats. Up to 60s. Group/room not supported.
+
+        Best-effort — silently ignores failures (loading is UX nice-to-have, not critical).
+        Spec: https://developers.line.biz/en/reference/messaging-api/#display-a-loading-animation
+        """
+        if not chat_id or not chat_id.startswith("U"):
+            return  # only valid for 1-on-1 chats (user IDs start with U)
+        body = {"chatId": chat_id, "loadingSeconds": max(5, min(60, seconds))}
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(LINE_LOADING_URL, headers=self._headers, json=body)
+        except Exception:
+            pass  # loading indicator failure is non-fatal

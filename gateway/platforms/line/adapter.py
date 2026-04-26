@@ -261,6 +261,18 @@ class LineAdapter(BasePlatformAdapter):
                 source,
             )
             return
+        log.info(
+            "line: received message src_type=%s user=%s text=%r",
+            source.get("type"),
+            source.get("userId"),
+            text[:80],
+        )
+        # Show typing indicator in 1-on-1 chats (LINE limitation: groups don't support it).
+        # Best-effort, fire-and-forget.
+        if source.get("type") == "user":
+            user_id = source.get("userId")
+            if user_id:
+                asyncio.create_task(self._reply.show_loading(user_id, seconds=30))
         request_id = self._cache.register_pending()
 
         async def _llm_then_dispatch() -> None:
