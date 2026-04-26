@@ -148,7 +148,9 @@ hermes gateway status       Check status
 hermes gateway setup        Configure platforms
 ```
 
-Supported platforms: Telegram, Discord, Slack, WhatsApp, Signal, Email, SMS, Matrix, Mattermost, Home Assistant, DingTalk, Feishu, WeCom, BlueBubbles (iMessage), Weixin (WeChat), API Server, Webhooks. Open WebUI connects via the API Server adapter.
+Supported platforms: Telegram, Discord, Slack, WhatsApp, Signal, LINE, Email, SMS, Matrix, Mattermost, Home Assistant, DingTalk, Feishu, WeCom, BlueBubbles (iMessage), Weixin (WeChat), API Server, Webhooks. Open WebUI connects via the API Server adapter.
+
+LINE specifics: 1-on-1 chats, groups, and multi-person rooms. Reply API (60-second token window); falls back to a postback Quick Reply button on slow LLM responses (no Push API, no quota cost). See `docs/messaging/line.md`.
 
 Platform docs: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/
 
