@@ -14,7 +14,13 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from gateway.config import Platform, PlatformConfig
-from gateway.platforms.base import BasePlatformAdapter, SendResult
+from gateway.platforms.base import (
+    BasePlatformAdapter,
+    MessageEvent,
+    MessageType,
+    SendResult,
+)
+from gateway.session import SessionSource
 from gateway.platforms.line.allowlist import is_allowed
 from gateway.platforms.line.cache import RequestCache, State
 from gateway.platforms.line.reply import (
@@ -92,11 +98,34 @@ class LineAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        # Wired in later task; LINE uses Reply API via reply_token, not chat_id.
-        raise NotImplementedError("LineAdapter.send wired in later task")
+        """Suppress incidental base-class self.send() calls.
+
+        LINE's main user response goes through the Reply API in
+        _handle_message / _handle_postback (reply_token is required and
+        only valid briefly). The base class also self-calls send() for
+        framework-internal status messages (compaction notices, approval
+        prompts, rate-limit notices, tool-result media). Those would
+        require LINE Push API which costs money — so we silent-log them
+        and return a non-success SendResult. Callers in base.py do not
+        treat these as fatal.
+        """
+        preview = (content or "")[:80].replace("\n", " ")
+        log.info(
+            "line: suppressed self.send chat_id=%s preview=%r",
+            chat_id,
+            preview,
+        )
+        return SendResult(
+            success=False,
+            error="line_adapter_suppresses_push_sends",
+        )
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
-        raise NotImplementedError("LineAdapter.get_chat_info wired in later task")
+        """Minimal stub — LINE Get Profile/Group APIs not wired.
+
+        Returns a placeholder so base-class introspection doesn't crash.
+        """
+        return {"name": chat_id, "type": "dm"}
 
     # ---- Public dispatch ----
 
@@ -235,10 +264,51 @@ class LineAdapter(BasePlatformAdapter):
         )
 
     async def _real_llm_call(self, text: str, source: dict[str, Any]) -> str:
-        """Production LLM path — wired in Task 9."""
-        raise NotImplementedError(
-            "Wired in Task 9 via BasePlatformAdapter session helpers"
+        """Production LLM path.
+
+        Bypasses BasePlatformAdapter.handle_message() session machinery
+        (which would try to deliver via self.send → Push API). Instead we
+        invoke the registered _message_handler directly to obtain the
+        agent's reply text, then return it for the LINE Reply API path
+        in _handle_message to deliver via reply_token.
+
+        Approval-prompt suppression: not needed here because we don't
+        enter the session lifecycle that issues approval prompts. Tool
+        approval (if a tool requires it during _message_handler) is
+        handled by the underlying agent in always-allow mode for LINE
+        deployments — operators should set HERMES_AUTO_APPROVE_TOOLS=1
+        or equivalent in env when running with LINE.
+        """
+        if self._message_handler is None:
+            raise RuntimeError(
+                "LineAdapter._real_llm_call invoked before set_message_handler()"
+            )
+
+        src_type = source.get("type", "user")
+        chat_type = "dm" if src_type == "user" else "group"
+        # LINE source: userId always present; groupId/roomId for group/room
+        chat_id = (
+            source.get("groupId")
+            or source.get("roomId")
+            or source.get("userId")
+            or "unknown"
         )
+        user_id = source.get("userId")
+
+        session_source = SessionSource(
+            platform=Platform.LINE,
+            chat_id=str(chat_id),
+            chat_type=chat_type,
+            user_id=str(user_id) if user_id else None,
+        )
+        event = MessageEvent(
+            text=text,
+            message_type=MessageType.TEXT,
+            source=session_source,
+            raw_message={"line_source": source},
+        )
+        response = await self._message_handler(event)
+        return response or ""
 
     # ---- Test helpers (no-ops in production) ----
 
