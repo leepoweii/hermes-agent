@@ -197,3 +197,82 @@ def _ensure_discord_mock() -> None:
 # Run at collection time — before any test file's module-level imports.
 _ensure_telegram_mock()
 _ensure_discord_mock()
+
+
+# ---------------------------------------------------------------------------
+# LINE adapter fixtures (used by test_line_adapter_dispatch.py and
+# test_line_send_suppression.py)
+# ---------------------------------------------------------------------------
+
+import asyncio as _asyncio_line
+
+import pytest_asyncio as _pytest_asyncio_line
+
+from gateway.platforms.line import (
+    LineAdapter as _LineAdapter,
+    LineAdapterConfig as _LineAdapterConfig,
+)
+
+
+@_pytest_asyncio_line.fixture
+async def line_adapter_user_only():
+    cfg = _LineAdapterConfig(
+        channel_access_token="t",
+        channel_secret="s",
+        allowed_users=["U1"],
+        allowed_groups=[],
+        allowed_rooms=[],
+        slow_response_threshold_seconds=50,
+        request_cache_ttl_seconds=3600,
+    )
+    adapter = _LineAdapter.from_config(cfg)
+
+    async def stub_llm(text, source, event=None):
+        return "ok"
+
+    adapter._llm_call = stub_llm
+    yield adapter
+    await adapter.disconnect()
+
+
+@_pytest_asyncio_line.fixture
+async def line_adapter_with_fast_llm():
+    cfg = _LineAdapterConfig(
+        channel_access_token="t",
+        channel_secret="s",
+        allowed_users=["U1"],
+        allowed_groups=[],
+        allowed_rooms=[],
+        slow_response_threshold_seconds=50,
+        request_cache_ttl_seconds=3600,
+    )
+    adapter = _LineAdapter.from_config(cfg)
+
+    async def fast_llm(text, source, event=None):
+        return f"fast: {text}"
+
+    adapter._llm_call = fast_llm
+    yield adapter
+    await adapter.disconnect()
+
+
+@_pytest_asyncio_line.fixture
+async def line_adapter_with_slow_llm():
+    cfg = _LineAdapterConfig(
+        channel_access_token="t",
+        channel_secret="s",
+        allowed_users=["U1"],
+        allowed_groups=[],
+        allowed_rooms=[],
+        slow_response_threshold_seconds=0.1,
+        request_cache_ttl_seconds=3600,
+    )
+    adapter = _LineAdapter.from_config(cfg)
+
+    async def slow_llm(text, source, event=None):
+        await _asyncio_line.sleep(0.5)
+        return f"slow: {text}"
+
+    adapter._llm_call = slow_llm
+    yield adapter
+    await adapter.disconnect()

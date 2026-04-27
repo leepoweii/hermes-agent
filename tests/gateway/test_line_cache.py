@@ -1,6 +1,6 @@
 import time
 
-from gateway.platforms.line.cache import (
+from gateway.platforms.line import (
     RequestCache,
     State,
 )

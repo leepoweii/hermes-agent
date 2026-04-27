@@ -14,7 +14,7 @@ import pytest
 
 from gateway.config import Platform
 from gateway.platforms.base import MessageEvent, MessageType
-from gateway.platforms.line.adapter import LineAdapter, LineAdapterConfig
+from gateway.platforms.line import LineAdapter, LineAdapterConfig
 
 
 def _make_adapter() -> LineAdapter:

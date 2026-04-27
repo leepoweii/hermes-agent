@@ -3162,7 +3162,7 @@ class GatewayRunner:
             return BlueBubblesAdapter(config)
 
         elif platform == Platform.LINE:
-            from gateway.platforms.line.adapter import LineAdapter, LineAdapterConfig
+            from gateway.platforms.line import LineAdapter, LineAdapterConfig
             try:
                 line_cfg = LineAdapterConfig.from_env()
             except ValueError as exc:

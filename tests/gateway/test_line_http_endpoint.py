@@ -7,7 +7,7 @@ import json
 import pytest
 from aiohttp import web
 
-from gateway.platforms.line.adapter import LineAdapter, LineAdapterConfig
+from gateway.platforms.line import LineAdapter, LineAdapterConfig
 
 
 def _sign(secret: str, body: bytes) -> str:

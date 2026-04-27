@@ -4,7 +4,7 @@ import pytest
 import respx
 from httpx import Response
 
-from gateway.platforms.line.reply import (
+from gateway.platforms.line import (
     LineReplyClient,
     build_quick_reply_button_message,
     PENDING_REPLY_TEXT,

@@ -1,6 +1,6 @@
 import pytest
 
-from gateway.platforms.line.adapter import LineAdapter, LineAdapterConfig
+from gateway.platforms.line import LineAdapter, LineAdapterConfig
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-from gateway.platforms.line.allowlist import is_allowed
+from gateway.platforms.line import is_allowed
 
 
 def test_user_in_allowlist():

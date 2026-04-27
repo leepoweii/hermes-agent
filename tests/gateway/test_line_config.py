@@ -1,6 +1,6 @@
 import pytest
 
-from gateway.platforms.line.adapter import LineAdapterConfig
+from gateway.platforms.line import LineAdapterConfig
 
 
 def test_from_env_parses_csv_allowlists(monkeypatch):

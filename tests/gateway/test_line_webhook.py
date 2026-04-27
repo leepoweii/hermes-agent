@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from gateway.platforms.line.webhook import verify_signature, parse_events
+from gateway.platforms.line import verify_signature, parse_events
 
 
 def _sign(secret: str, body: bytes) -> str:

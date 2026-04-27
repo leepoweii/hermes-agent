@@ -1,18 +1,34 @@
 """LineAdapter — Hermes platform adapter for LINE Messaging API.
 
 Pattern reference:
-  - gateway/platforms/webhook.py — request cache + TTL pattern (borrowed in cache.py)
+  - gateway/platforms/webhook.py — request cache + TTL pattern (borrowed in RequestCache)
   - gateway/platforms/telegram.py — env var / allowlist pattern
   - gateway/platforms/base.py:1898-1921 — `_background_tasks` set + cancel-on-shutdown
+
+Single-file layout (matches sibling adapters telegram.py / discord.py):
+  - Webhook signature + payload parsing
+  - Source allowlist
+  - Cache state machine (PENDING → READY → DELIVERED, plus ERROR)
+  - Reply API client + Quick Reply helpers
+  - LineAdapter (config + adapter class)
 """
 from __future__ import annotations
 
 import asyncio
+import base64
+import enum
+import hashlib
+import hmac
 import json
 import logging
 import os
+import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, Optional
+
+import httpx
+from aiohttp import web
 
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (
@@ -22,21 +38,268 @@ from gateway.platforms.base import (
     SendResult,
 )
 from gateway.session import SessionSource
-from aiohttp import web
-
-from gateway.platforms.line.allowlist import is_allowed
-from gateway.platforms.line.cache import RequestCache, State
-from gateway.platforms.line.webhook import parse_events, verify_signature
-from gateway.platforms.line.reply import (
-    ALREADY_DELIVERED_TEXT,
-    EXPIRED_REPLY_TEXT,
-    LineReplyClient,
-    PENDING_REPLY_TEXT,
-    build_quick_reply_button_message,
-)
 
 
 log = logging.getLogger(__name__)
+
+
+LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
+LINE_LOADING_URL = "https://api.line.me/v2/bot/chat/loading/start"
+
+PENDING_REPLY_TEXT = "🤔 還在思考中，請稍候。如果太久沒回應，請重發訊息。"
+EXPIRED_REPLY_TEXT = "答案已過期，請重新提問。"
+ALREADY_DELIVERED_TEXT = "剛才已經回過了 ✅"
+
+
+# ---------------------------------------------------------------------------
+# Webhook signature + payload parsing
+# ---------------------------------------------------------------------------
+# Spec: https://developers.line.biz/en/reference/messaging-api/#signature-validation
+
+
+def verify_signature(body: bytes, signature: str, channel_secret: str) -> bool:
+    """Constant-time compare LINE's X-Line-Signature header against an HMAC-SHA256
+    of the raw body using the channel secret.
+    """
+    if not signature:
+        return False
+    expected = base64.b64encode(
+        hmac.new(channel_secret.encode("utf-8"), body, hashlib.sha256).digest()
+    ).decode()
+    return hmac.compare_digest(expected, signature)
+
+
+def parse_events(body: bytes) -> list[dict[str, Any]]:
+    """Parse a LINE webhook body into the raw events list. Returns [] on no events.
+    Does NOT validate types — leaves that to the dispatcher.
+    """
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+    return payload.get("events", []) or []
+
+
+# ---------------------------------------------------------------------------
+# Source allowlist
+# ---------------------------------------------------------------------------
+# Decision order (per spec):
+#   1. Allowlist check first — silent drop if not allowed
+#   2. Configuration check second — placeholder reply if no LLM yet
+#   3. Normal flow — process the message
+
+
+def is_allowed(event: dict[str, Any], cfg: dict[str, list[str]]) -> bool:
+    """Return True if the event's source is in the appropriate allowlist.
+
+    cfg expected shape:
+        {"users": ["U..."], "groups": ["C..."], "rooms": ["R..."]}
+
+    If LINE_ALLOW_ALL_USERS env var is truthy, returns True regardless of
+    allowlist contents (debug-only escape hatch — mirrors the pattern used by
+    other Hermes platform adapters such as DISCORD_ALLOW_ALL_USERS).
+    """
+    if os.getenv("LINE_ALLOW_ALL_USERS", "").lower() in ("true", "1", "yes"):
+        return True
+    source = event.get("source") or {}
+    src_type = source.get("type")
+    if src_type == "user":
+        return source.get("userId") in cfg.get("users", [])
+    if src_type == "group":
+        return source.get("groupId") in cfg.get("groups", [])
+    if src_type == "room":
+        return source.get("roomId") in cfg.get("rooms", [])
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Cache state machine
+# ---------------------------------------------------------------------------
+# In-memory cache of pending/ready LINE LLM responses, keyed by request_id.
+#
+# State machine (per design spec):
+#     PENDING   → LLM still running, no answer yet
+#     READY     → LLM done, answer cached, waiting for postback tap
+#     DELIVERED → answer already sent
+#     ERROR     → LLM raised; cached error text waiting to be shown
+#
+# Storage: dict in the adapter process. Not Redis-backed — container restart
+# drops PENDING entries (acceptable trade-off; users see "答案已過期").
+#
+# Two TTLs:
+#     - ``ttl_seconds`` (default 1h) — applies to READY/DELIVERED entries,
+#       keyed off ``updated_at`` (when the entry transitioned).
+#     - ``pending_ttl_seconds`` (default 24h) — ceiling TTL for PENDING
+#       entries, keyed off ``created_at`` (when registered).
+#
+# Pattern borrowed from gateway/platforms/webhook.py (_delivery_info,
+# _idempotency_ttl=3600, _prune_delivery_info).
+
+
+class State(enum.Enum):
+    PENDING = "pending"
+    READY = "ready"
+    DELIVERED = "delivered"
+    ERROR = "error"
+
+
+@dataclass
+class CacheEntry:
+    state: State
+    payload: Any = None  # the LLM response, when READY
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+
+
+class RequestCache:
+    """In-memory `dict[request_id, CacheEntry]` with TTL pruning.
+
+    Two TTLs are enforced by ``prune()``:
+        - READY/DELIVERED entries older than ``ttl_seconds`` (by ``updated_at``)
+        - PENDING entries older than ``pending_ttl_seconds`` (by ``created_at``)
+
+    Not safe across threads — single-event-loop only.
+    """
+
+    def __init__(
+        self,
+        ttl_seconds: int = 3600,
+        pending_ttl_seconds: int = 86400,
+    ) -> None:
+        self._entries: dict[str, CacheEntry] = {}
+        self._ttl = ttl_seconds
+        self._pending_ttl = pending_ttl_seconds
+
+    def register_pending(self) -> str:
+        rid = str(uuid.uuid4())
+        self._entries[rid] = CacheEntry(state=State.PENDING)
+        return rid
+
+    def get(self, request_id: str) -> CacheEntry | None:
+        return self._entries.get(request_id)
+
+    def set_ready(self, request_id: str, payload: Any) -> None:
+        entry = self._entries.get(request_id)
+        if entry is None:
+            return  # task was cancelled / cache was wiped — nothing to do
+        entry.state = State.READY
+        entry.payload = payload
+        entry.updated_at = time.time()
+
+    def set_error(self, request_id: str, error_msg: str) -> None:
+        entry = self._entries.get(request_id)
+        if entry is None:
+            return
+        entry.state = State.ERROR
+        entry.payload = error_msg
+        entry.updated_at = time.time()
+
+    def mark_delivered(self, request_id: str) -> None:
+        entry = self._entries.get(request_id)
+        if entry is None:
+            return
+        entry.state = State.DELIVERED
+        entry.updated_at = time.time()
+
+    def prune(self) -> None:
+        """Remove stale entries.
+
+        - READY/DELIVERED: pruned when ``updated_at`` is older than ``ttl_seconds``.
+        - PENDING: pruned when ``created_at`` is older than ``pending_ttl_seconds``
+          (ceiling TTL — defends against tasks that never reach a terminal state).
+        """
+        now = time.time()
+        terminal_cutoff = now - self._ttl
+        pending_cutoff = now - self._pending_ttl
+        stale = [
+            rid
+            for rid, entry in self._entries.items()
+            if (
+                entry.state in (State.READY, State.DELIVERED, State.ERROR)
+                and entry.updated_at < terminal_cutoff
+            )
+            or (
+                entry.state is State.PENDING
+                and entry.created_at < pending_cutoff
+            )
+        ]
+        for rid in stale:
+            del self._entries[rid]
+
+
+# ---------------------------------------------------------------------------
+# Reply API client + Quick Reply helpers
+# ---------------------------------------------------------------------------
+# Quick Reply payload shape per LINE docs:
+# https://developers.line.biz/en/reference/messaging-api/#quick-reply
+
+
+def build_quick_reply_button_message(
+    text: str, button_label: str, request_id: str
+) -> dict[str, Any]:
+    """Build a LINE text message with a single postback Quick Reply button.
+
+    The button payload encodes JSON so the postback handler can route by action.
+    """
+    return {
+        "type": "text",
+        "text": text,
+        "quickReply": {
+            "items": [
+                {
+                    "type": "action",
+                    "action": {
+                        "type": "postback",
+                        "label": button_label,
+                        "data": json.dumps(
+                            {"action": "show_response", "request_id": request_id}
+                        ),
+                        "displayText": button_label,
+                    },
+                }
+            ]
+        },
+    }
+
+
+class LineReplyClient:
+    """Thin async wrapper around the LINE Reply API."""
+
+    def __init__(self, channel_access_token: str, timeout: float = 10.0) -> None:
+        self._headers = {
+            "Authorization": f"Bearer {channel_access_token}",
+            "Content-Type": "application/json",
+        }
+        self._timeout = timeout
+
+    async def reply(self, reply_token: str, messages: list[dict[str, Any]]) -> None:
+        """POST /v2/bot/message/reply. Raises on non-2xx (caller decides how to log)."""
+        body = {"replyToken": reply_token, "messages": messages}
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            r = await client.post(LINE_REPLY_URL, headers=self._headers, json=body)
+            r.raise_for_status()
+
+    async def show_loading(self, chat_id: str, seconds: int = 30) -> None:
+        """Show typing animation in 1-on-1 chats. Up to 60s. Group/room not supported.
+
+        Best-effort — silently ignores failures (loading is UX nice-to-have, not critical).
+        Spec: https://developers.line.biz/en/reference/messaging-api/#display-a-loading-animation
+        """
+        if not chat_id or not chat_id.startswith("U"):
+            return  # only valid for 1-on-1 chats (user IDs start with U)
+        body = {"chatId": chat_id, "loadingSeconds": max(5, min(60, seconds))}
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(LINE_LOADING_URL, headers=self._headers, json=body)
+        except Exception:
+            pass  # loading indicator failure is non-fatal
+
+
+# ---------------------------------------------------------------------------
+# Adapter
+# ---------------------------------------------------------------------------
 
 
 @dataclass

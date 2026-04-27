@@ -16,7 +16,7 @@ from gateway.platforms.base import SendResult
 
 @pytest.mark.asyncio
 async def test_send_does_not_raise_and_logs(line_adapter_with_fast_llm, caplog):
-    caplog.set_level(logging.INFO, logger="gateway.platforms.line.adapter")
+    caplog.set_level(logging.INFO, logger="gateway.platforms.line")
     result = await line_adapter_with_fast_llm.send(
         chat_id="U1", content="incidental notice from base"
     )
