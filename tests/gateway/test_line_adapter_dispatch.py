@@ -132,7 +132,7 @@ async def test_postback_delivered_replies_already_done(line_adapter_with_fast_ll
     line_adapter_with_fast_llm._cache.mark_delivered(rid)
     await line_adapter_with_fast_llm.dispatch_event(_postback_event(rid))
     sent = _json.loads(route.calls.last.request.content)
-    assert "已經回過了" in sent["messages"][0]["text"] or "已经回过" in sent["messages"][0]["text"]
+    assert "Already replied" in sent["messages"][0]["text"]
 
 
 @pytest.mark.asyncio
@@ -143,7 +143,7 @@ async def test_postback_unknown_request_id_says_expired(line_adapter_with_fast_l
     )
     await line_adapter_with_fast_llm.dispatch_event(_postback_event("never-existed"))
     sent = _json.loads(route.calls.last.request.content)
-    assert "過期" in sent["messages"][0]["text"]
+    assert "expired" in sent["messages"][0]["text"].lower()
 
 
 @pytest.mark.asyncio
@@ -216,4 +216,4 @@ async def test_unconfigured_bot_replies_with_setup_notice(line_adapter_with_fast
     await line_adapter_with_fast_llm.dispatch_event(event)
     assert route.called
     sent = json.loads(route.calls.last.request.content)
-    assert "尚未完成設定" in sent["messages"][0]["text"]
+    assert "not configured" in sent["messages"][0]["text"].lower()

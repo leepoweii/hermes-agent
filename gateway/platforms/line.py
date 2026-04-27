@@ -43,12 +43,37 @@ from gateway.session import SessionSource
 logger = logging.getLogger(__name__)
 
 
+def check_line_requirements() -> bool:
+    """Check that LINE adapter dependencies are available.
+
+    httpx and aiohttp are Hermes core dependencies, so this always returns
+    True. The function exists to satisfy the adapter factory contract in
+    gateway/run.py (every platform adapter must expose it).
+    """
+    try:
+        import httpx  # noqa: F401
+        import aiohttp  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
 LINE_LOADING_URL = "https://api.line.me/v2/bot/chat/loading/start"
+MAX_MESSAGE_LENGTH = 5000  # LINE hard limit per message segment
 
-PENDING_REPLY_TEXT = "🤔 還在思考中，請稍候。如果太久沒回應，請重發訊息。"
-EXPIRED_REPLY_TEXT = "答案已過期，請重新提問。"
-ALREADY_DELIVERED_TEXT = "剛才已經回過了 ✅"
+PENDING_REPLY_TEXT = (
+    os.environ.get("LINE_PENDING_TEXT")
+    or "🤔 Still thinking, please wait. If no reply arrives, resend your message."
+)
+EXPIRED_REPLY_TEXT = (
+    os.environ.get("LINE_EXPIRED_TEXT")
+    or "Response expired — please ask again."
+)
+ALREADY_DELIVERED_TEXT = (
+    os.environ.get("LINE_DELIVERED_TEXT")
+    or "Already replied ✅"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -426,6 +451,11 @@ class LineAdapter(BasePlatformAdapter):
             finally:
                 self._runner = None
 
+    async def send_typing(self, chat_id: str) -> None:
+        """Send typing indicator. LINE only supports this for 1-on-1 chats (source type 'user')."""
+        if chat_id.startswith("U"):
+            await self._reply.show_loading(chat_id, seconds=30)
+
     async def send(
         self,
         chat_id: str,
@@ -475,8 +505,10 @@ class LineAdapter(BasePlatformAdapter):
 
     async def dispatch_event(self, event: dict[str, Any]) -> None:
         self._ensure_test_events()
-        assert self._test_idle_event is not None
-        assert self._test_button_sent_event is not None
+        if self._test_idle_event is None:
+            raise RuntimeError("_test_idle_event not initialised — call _ensure_test_events() first")
+        if self._test_button_sent_event is None:
+            raise RuntimeError("_test_button_sent_event not initialised — call _ensure_test_events() first")
         self._test_idle_event.clear()
         self._test_button_sent_event.clear()
         cfg = {
@@ -500,9 +532,10 @@ class LineAdapter(BasePlatformAdapter):
             if reply_token:
                 await self._reply.reply(
                     reply_token,
-                    [{"type": "text", "text": "Bot 尚未完成設定，請聯繫管理員。"}],
+                    [{"type": "text", "text": "Bot is not configured yet — please contact the administrator."}],
                 )
-            assert self._test_idle_event is not None
+            if self._test_idle_event is None:
+                raise RuntimeError("_test_idle_event not initialised — call _ensure_test_events() first")
             self._test_idle_event.set()
             return
 
@@ -581,12 +614,14 @@ class LineAdapter(BasePlatformAdapter):
                         request_id=request_id,
                     )
                     await self._reply.reply(reply_token, [msg])
-                    assert self._test_button_sent_event is not None
+                    if self._test_button_sent_event is None:
+                        raise RuntimeError("_test_button_sent_event not initialised — call _ensure_test_events() first")
                     self._test_button_sent_event.set()
             except Exception:
                 logger.exception("watcher failed for request_id=%s", request_id)
             finally:
-                assert self._test_idle_event is not None
+                if self._test_idle_event is None:
+                    raise RuntimeError("_test_idle_event not initialised — call _ensure_test_events() first")
                 self._test_idle_event.set()
 
         watcher_task = asyncio.create_task(_watcher())
@@ -718,10 +753,12 @@ class LineAdapter(BasePlatformAdapter):
 
     async def wait_idle(self) -> None:
         self._ensure_test_events()
-        assert self._test_idle_event is not None
+        if self._test_idle_event is None:
+            raise RuntimeError("_test_idle_event not initialised — call _ensure_test_events() first")
         await self._test_idle_event.wait()
 
     async def wait_button_sent(self) -> None:
         self._ensure_test_events()
-        assert self._test_button_sent_event is not None
+        if self._test_button_sent_event is None:
+            raise RuntimeError("_test_button_sent_event not initialised — call _ensure_test_events() first")
         await self._test_button_sent_event.wait()

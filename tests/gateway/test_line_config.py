@@ -3,6 +3,22 @@ import pytest
 from gateway.platforms.line import LineAdapterConfig
 
 
+def test_check_line_requirements_returns_true():
+    """check_line_requirements always returns True — httpx and aiohttp are core deps."""
+    from gateway.platforms.line import check_line_requirements
+    assert check_line_requirements() is True
+
+
+def test_platform_hints_includes_line():
+    """Agent system prompt must know it's on LINE to avoid markdown/formatting issues."""
+    from agent.prompt_builder import PLATFORM_HINTS
+    assert "line" in PLATFORM_HINTS
+    hint = PLATFORM_HINTS["line"]
+    assert "LINE" in hint
+    assert isinstance(hint, str)
+    assert len(hint) > 20
+
+
 def test_from_env_parses_csv_allowlists(monkeypatch):
     monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "t")
     monkeypatch.setenv("LINE_CHANNEL_SECRET", "s")

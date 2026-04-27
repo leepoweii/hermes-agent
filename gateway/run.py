@@ -3164,7 +3164,14 @@ class GatewayRunner:
             return BlueBubblesAdapter(config)
 
         elif platform == Platform.LINE:
-            from gateway.platforms.line import LineAdapter, LineAdapterConfig
+            from gateway.platforms.line import (
+                LineAdapter,
+                LineAdapterConfig,
+                check_line_requirements,
+            )
+            if not check_line_requirements():
+                logger.warning("[LINE] Dependencies not available (httpx/aiohttp missing)")
+                return None
             try:
                 line_cfg = LineAdapterConfig.from_env()
             except ValueError as exc:
