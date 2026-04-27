@@ -2162,6 +2162,7 @@ class GatewayRunner:
                        "WEIXIN_ALLOWED_USERS",
                        "BLUEBUBBLES_ALLOWED_USERS",
                        "QQ_ALLOWED_USERS",
+                       "LINE_ALLOWED_USERS",
                        "YUANBAO_ALLOWED_USERS",
                        "GATEWAY_ALLOWED_USERS")
         )
@@ -2178,6 +2179,7 @@ class GatewayRunner:
                        "WEIXIN_ALLOW_ALL_USERS",
                        "BLUEBUBBLES_ALLOW_ALL_USERS",
                        "QQ_ALLOW_ALL_USERS",
+                       "LINE_ALLOW_ALL_USERS",
                        "YUANBAO_ALLOW_ALL_USERS")
         )
         if not _any_allowlist and not _allow_all:
