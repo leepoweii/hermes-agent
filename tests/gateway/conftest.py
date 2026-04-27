@@ -276,3 +276,44 @@ async def line_adapter_with_slow_llm():
     adapter._llm_call = slow_llm
     yield adapter
     await adapter.disconnect()
+
+
+@_pytest_asyncio_line.fixture
+def make_line_adapter():
+    """Factory fixture for building a LineAdapter with custom config.
+
+    Usage::
+
+        adapter = make_line_adapter(allowed_groups=["C1"], require_mention=True, bot_display_name="小茉")
+    """
+    adapters = []
+
+    def _factory(**kwargs):
+        defaults = dict(
+            channel_access_token="t",
+            channel_secret="s",
+            allowed_users=["U1"],
+            allowed_groups=[],
+            allowed_rooms=[],
+            slow_response_threshold_seconds=50,
+            request_cache_ttl_seconds=3600,
+        )
+        defaults.update(kwargs)
+        cfg = _LineAdapterConfig(**defaults)
+        adapter = _LineAdapter.from_config(cfg)
+
+        async def stub_llm(text, source, event=None):
+            return f"ok: {text}"
+
+        adapter._llm_call = stub_llm
+        adapters.append(adapter)
+        return adapter
+
+    yield _factory
+
+    async def _cleanup():
+        for a in adapters:
+            await a.disconnect()
+
+    import asyncio as _asyncio
+    _asyncio.get_event_loop().run_until_complete(_cleanup())
