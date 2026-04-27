@@ -322,6 +322,7 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
     platform_map = {
         "telegram": Platform.TELEGRAM,
         "discord": Platform.DISCORD,
+        "line": Platform.LINE,
         "slack": Platform.SLACK,
         "whatsapp": Platform.WHATSAPP,
         "signal": Platform.SIGNAL,

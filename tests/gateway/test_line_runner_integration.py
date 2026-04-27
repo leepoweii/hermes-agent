@@ -18,3 +18,13 @@ def test_line_in_authorization_maps():
     )
     assert "LINE_ALLOWED_USERS" in src
     assert "LINE_ALLOW_ALL_USERS" in src
+
+
+def test_line_in_cron_platform_map():
+    """Cron delivery to LINE must be registered or cronjob(deliver='line') silently fails."""
+    from cron import scheduler
+    src = inspect.getsource(scheduler._deliver_result)
+    assert '"line"' in src or "'line'" in src, (
+        "'line' key missing from cron scheduler platform_map — "
+        "cronjob(deliver='line') will silently fail"
+    )
