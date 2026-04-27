@@ -1,8 +1,8 @@
-"""Verify LINE auth lookup keys exist in the gateway runner maps.
+"""Verify LINE integration points exist in the gateway runner and cron scheduler.
 
-Regression test for codex finding #1: Platform.LINE was missing from
-GatewayRunner._is_user_authorized's platform_env_map and
-platform_allow_all_map, causing every LINE message to fail authorization.
+Guards against Platform.LINE being accidentally omitted from authorization
+maps (which would silently drop every incoming LINE message) and from the
+cron scheduler's platform_map (which would silently ignore deliver='line').
 """
 import inspect
 

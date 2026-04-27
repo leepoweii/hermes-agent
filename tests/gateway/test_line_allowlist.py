@@ -1,3 +1,4 @@
+"""Tests for the LINE source allowlist (user / group / room filtering)."""
 from gateway.platforms.line import is_allowed
 
 

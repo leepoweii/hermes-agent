@@ -1,3 +1,4 @@
+"""Tests for the LINE request cache state machine (PENDING → READY → DELIVERED / ERROR)."""
 import time
 
 from gateway.platforms.line import (

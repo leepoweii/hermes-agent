@@ -1,3 +1,4 @@
+"""Tests for LineAdapterConfig (env var loading) and global integration checks."""
 import pytest
 
 from gateway.platforms.line import LineAdapterConfig

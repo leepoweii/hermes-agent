@@ -1,16 +1,7 @@
 """LineAdapter — Hermes platform adapter for LINE Messaging API.
 
-Pattern reference:
-  - gateway/platforms/webhook.py — request cache + TTL pattern (borrowed in RequestCache)
-  - gateway/platforms/telegram.py — env var / allowlist pattern
-  - gateway/platforms/base.py:1898-1921 — `_background_tasks` set + cancel-on-shutdown
-
-Single-file layout (matches sibling adapters telegram.py / discord.py):
-  - Webhook signature + payload parsing
-  - Source allowlist
-  - Cache state machine (PENDING → READY → DELIVERED, plus ERROR)
-  - Reply API client + Quick Reply helpers
-  - LineAdapter (config + adapter class)
+Handles webhook signature validation, source allowlisting, a PENDING/READY/DELIVERED
+request-cache for slow LLM responses, and Reply/Push API dispatch.
 """
 from __future__ import annotations
 
@@ -27,6 +18,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+logger = logging.getLogger(__name__)
+
 import httpx
 from aiohttp import web
 
@@ -38,9 +31,6 @@ from gateway.platforms.base import (
     SendResult,
 )
 from gateway.session import SessionSource
-
-
-logger = logging.getLogger(__name__)
 
 
 def check_line_requirements() -> bool:
@@ -60,7 +50,7 @@ def check_line_requirements() -> bool:
 
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
 LINE_LOADING_URL = "https://api.line.me/v2/bot/chat/loading/start"
-MAX_MESSAGE_LENGTH = 5000  # LINE hard limit per message segment
+LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 
 PENDING_REPLY_TEXT = (
     os.environ.get("LINE_PENDING_TEXT")
@@ -338,7 +328,7 @@ class LineAdapterConfig:
     request_cache_ttl_seconds: int = 3600
 
     @classmethod
-    def from_env(cls) -> "LineAdapterConfig":
+    def from_env(cls) -> LineAdapterConfig:
         def _required(name: str) -> str:
             v = os.environ.get(name)
             if not v:
@@ -360,6 +350,7 @@ class LineAdapterConfig:
 
 class LineAdapter(BasePlatformAdapter):
     name = "line"
+    MAX_MESSAGE_LENGTH = 5000  # LINE hard limit per message segment
 
     def __init__(self, config: LineAdapterConfig) -> None:
         platform_cfg = PlatformConfig(
@@ -384,7 +375,7 @@ class LineAdapter(BasePlatformAdapter):
             self._test_button_sent_event = asyncio.Event()
 
     @classmethod
-    def from_config(cls, cfg: LineAdapterConfig | dict) -> "LineAdapter":
+    def from_config(cls, cfg: LineAdapterConfig | dict) -> LineAdapter:
         if isinstance(cfg, dict):
             cfg = LineAdapterConfig(**cfg)
         return cls(cfg)
@@ -456,6 +447,104 @@ class LineAdapter(BasePlatformAdapter):
         if chat_id.startswith("U"):
             await self._reply.show_loading(chat_id, seconds=30)
 
+    async def send_image(
+        self,
+        chat_id: str,
+        image_url: str,
+        caption: Optional[str] = None,
+        reply_to: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send an image via LINE Push API.
+
+        LINE requires HTTPS image URLs and does not support inline captions on
+        image messages. When a caption is provided it is sent as a follow-up
+        text message. Falls back to sending the URL as plain text when the URL
+        is not HTTPS (LINE rejects non-HTTPS originalContentUrl).
+        """
+        if not image_url.startswith("https://"):
+            # LINE rejects non-HTTPS URLs — degrade to text link
+            text = f"{caption}\n{image_url}" if caption else image_url
+            return await self._push_text(chat_id, text)
+
+        token = self._cfg.channel_access_token
+        if not token:
+            return SendResult(success=False, error="LINE: channel access token not set")
+
+        messages: list[dict] = [
+            {
+                "type": "image",
+                "originalContentUrl": image_url,
+                "previewImageUrl": image_url,
+            }
+        ]
+        if caption:
+            messages.append({"type": "text", "text": caption})
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    LINE_PUSH_URL,
+                    json={"to": chat_id, "messages": messages},
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    },
+                )
+                resp.raise_for_status()
+            return SendResult(success=True)
+        except Exception as exc:
+            logger.warning("line: send_image push failed chat_id=%s: %s", chat_id, exc)
+            return SendResult(success=False, error=str(exc))
+
+    async def send_image_file(
+        self,
+        chat_id: str,
+        image_path: str,
+        caption: Optional[str] = None,
+        reply_to: Optional[str] = None,
+        **kwargs: Any,
+    ) -> SendResult:
+        """Not supported — LINE requires publicly accessible HTTPS image URLs.
+
+        Local file upload is not available through the Messaging API. Returns
+        a non-fatal error so callers (base class dispatch loop) can fall back
+        to text and continue rather than crashing.
+        """
+        logger.warning(
+            "line: send_image_file not supported (LINE requires HTTPS URLs); "
+            "chat_id=%s path=%s",
+            chat_id,
+            image_path,
+        )
+        return SendResult(
+            success=False,
+            error="LINE adapter does not support local file upload — HTTPS URL required",
+        )
+
+    async def _push_text(self, chat_id: str, text: str) -> SendResult:
+        """Send a plain text message via LINE Push API."""
+        token = self._cfg.channel_access_token
+        if not token:
+            return SendResult(success=False, error="LINE: channel access token not set")
+        chunks = [text[i:i + self.MAX_MESSAGE_LENGTH] for i in range(0, len(text), self.MAX_MESSAGE_LENGTH)][:5]
+        messages = [{"type": "text", "text": chunk} for chunk in chunks]
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    LINE_PUSH_URL,
+                    json={"to": chat_id, "messages": messages},
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    },
+                )
+                resp.raise_for_status()
+            return SendResult(success=True)
+        except Exception as exc:
+            logger.warning("line: push_text failed chat_id=%s: %s", chat_id, exc)
+            return SendResult(success=False, error=str(exc))
+
     async def send(
         self,
         chat_id: str,
@@ -499,7 +588,7 @@ class LineAdapter(BasePlatformAdapter):
             ctype = "room"
         else:
             ctype = "unknown"
-        return {"name": chat_id, "type": ctype}
+        return {"name": chat_id, "type": ctype, "chat_id": chat_id}
 
     # ---- Public dispatch ----
 

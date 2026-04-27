@@ -1572,7 +1572,7 @@ async def _send_yuanbao(chat_id, message, media_files=None):
         return _error(f"Yuanbao send failed: {e}")
 
 
-async def _send_line(pconfig, chat_id: str, message: str):
+async def _send_line(pconfig, chat_id, message):
     """Send a message to a LINE user/group via Push API.
 
     Uses Push API (not Reply API) because send_message/cron runs outside
@@ -1581,6 +1581,11 @@ async def _send_line(pconfig, chat_id: str, message: str):
     Requires LINE_CHANNEL_ACCESS_TOKEN in pconfig.token.
     Push API costs a message credit on LINE's paid plan.
     """
+    try:
+        import httpx
+    except ImportError:
+        return _error("LINE send requires httpx. Run: pip install httpx")
+
     token = pconfig.token or ""
     if not token:
         return _error("LINE: LINE_CHANNEL_ACCESS_TOKEN not configured.")
@@ -1590,7 +1595,6 @@ async def _send_line(pconfig, chat_id: str, message: str):
     messages = [{"type": "text", "text": chunk} for chunk in chunks]
 
     try:
-        import httpx
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 "https://api.line.me/v2/bot/message/push",

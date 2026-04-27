@@ -1,3 +1,4 @@
+"""Smoke tests for LineAdapter connect/disconnect lifecycle and runner startup."""
 import pytest
 
 from gateway.platforms.line import LineAdapter, LineAdapterConfig

@@ -883,6 +883,14 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
         config.platforms[Platform.LINE].enabled = True
         config.platforms[Platform.LINE].token = line_token
 
+    line_home = os.getenv("LINE_HOME_CHANNEL")
+    if line_home and Platform.LINE in config.platforms:
+        config.platforms[Platform.LINE].home_channel = HomeChannel(
+            platform=Platform.LINE,
+            chat_id=line_home,
+            name=os.getenv("LINE_HOME_CHANNEL_NAME", "Home"),
+        )
+
     # Telegram
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if telegram_token:

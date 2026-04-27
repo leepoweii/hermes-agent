@@ -591,16 +591,18 @@ agent:
 #   cli:           hermes-cli            (everything + cronjob management)
 #   telegram:      hermes-telegram       (terminal, file, web, vision, image, tts, browser, skills, todo, cronjob, messaging)
 #   discord:       hermes-discord        (same as telegram)
+#   line:          hermes-line           (same as telegram)
 #   whatsapp:      hermes-whatsapp       (same as telegram)
 #   slack:         hermes-slack          (same as telegram)
 #   signal:        hermes-signal         (same as telegram)
 #   homeassistant: hermes-homeassistant  (same as telegram)
-#   qqbot:            hermes-qqbot            (same as telegram)
+#   qqbot:         hermes-qqbot          (same as telegram)
 #
 platform_toolsets:
   cli: [hermes-cli]
   telegram: [hermes-telegram]
   discord: [hermes-discord]
+  line: [hermes-line]
   whatsapp: [hermes-whatsapp]
   slack: [hermes-slack]
   signal: [hermes-signal]
@@ -650,6 +652,7 @@ platform_toolsets:
 #   hermes-telegram  - terminal, file, web, vision, image_gen, tts, browser,
 #                      skills, todo, cronjob, send_message
 #   hermes-discord   - Same as hermes-telegram
+#   hermes-line      - Same as hermes-telegram
 #   hermes-whatsapp  - Same as hermes-telegram
 #   hermes-slack     - Same as hermes-telegram
 #

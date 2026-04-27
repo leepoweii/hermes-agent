@@ -76,9 +76,6 @@ async def test_message_without_reply_token_is_dropped(line_adapter_with_fast_llm
     assert not route.called
 
 
-import json as _json
-
-
 def _postback_event(request_id, reply_token="rt-pb"):
     return {
         "type": "postback",
@@ -86,7 +83,7 @@ def _postback_event(request_id, reply_token="rt-pb"):
         "source": {"type": "user", "userId": "U1"},
         "timestamp": 2,
         "postback": {
-            "data": _json.dumps({"action": "show_response", "request_id": request_id})
+            "data": json.dumps({"action": "show_response", "request_id": request_id})
         },
     }
 
@@ -99,10 +96,10 @@ async def test_postback_pending_re_attaches_button(line_adapter_with_fast_llm):
     )
     rid = line_adapter_with_fast_llm._cache.register_pending()
     await line_adapter_with_fast_llm.dispatch_event(_postback_event(rid))
-    sent = _json.loads(route.calls.last.request.content)
+    sent = json.loads(route.calls.last.request.content)
     msg = sent["messages"][0]
     assert "quickReply" in msg  # button must be re-attached so user can retry
-    button_data = _json.loads(msg["quickReply"]["items"][0]["action"]["data"])
+    button_data = json.loads(msg["quickReply"]["items"][0]["action"]["data"])
     assert button_data["request_id"] == rid
     assert button_data["action"] == "show_response"
 
@@ -116,7 +113,7 @@ async def test_postback_ready_delivers_answer_and_marks_delivered(line_adapter_w
     rid = line_adapter_with_fast_llm._cache.register_pending()
     line_adapter_with_fast_llm._cache.set_ready(rid, "the answer")
     await line_adapter_with_fast_llm.dispatch_event(_postback_event(rid))
-    sent = _json.loads(route.calls.last.request.content)
+    sent = json.loads(route.calls.last.request.content)
     assert sent["messages"][0]["text"] == "the answer"
     assert line_adapter_with_fast_llm._cache.get(rid).state.value == "delivered"
 
@@ -131,7 +128,7 @@ async def test_postback_delivered_replies_already_done(line_adapter_with_fast_ll
     line_adapter_with_fast_llm._cache.set_ready(rid, "x")
     line_adapter_with_fast_llm._cache.mark_delivered(rid)
     await line_adapter_with_fast_llm.dispatch_event(_postback_event(rid))
-    sent = _json.loads(route.calls.last.request.content)
+    sent = json.loads(route.calls.last.request.content)
     assert "Already replied" in sent["messages"][0]["text"]
 
 
@@ -142,7 +139,7 @@ async def test_postback_unknown_request_id_says_expired(line_adapter_with_fast_l
         return_value=Response(200, json={})
     )
     await line_adapter_with_fast_llm.dispatch_event(_postback_event("never-existed"))
-    sent = _json.loads(route.calls.last.request.content)
+    sent = json.loads(route.calls.last.request.content)
     assert "expired" in sent["messages"][0]["text"].lower()
 
 
