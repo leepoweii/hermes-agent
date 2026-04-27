@@ -40,7 +40,7 @@ from gateway.platforms.base import (
 from gateway.session import SessionSource
 
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
@@ -380,11 +380,11 @@ class LineAdapter(BasePlatformAdapter):
         if not verify_signature(body, signature, self._cfg.channel_secret):
             return web.Response(status=401, text="invalid signature")
         events = parse_events(body)
+        # Return 200 immediately so LINE doesn't retry and show_loading fires ASAP.
         for ev in events:
-            # dispatch_event spawns its own background tasks; awaiting here
-            # only schedules them. Webhook returns 200 immediately so LINE
-            # does not retry.
-            await self.dispatch_event(ev)
+            task = asyncio.create_task(self.dispatch_event(ev))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
         return web.Response(status=200, text="ok")
 
     async def connect(self, app: web.Application | None = None) -> bool:
@@ -400,11 +400,11 @@ class LineAdapter(BasePlatformAdapter):
             site = web.TCPSite(runner, "0.0.0.0", port)
             await site.start()
             self._runner = runner
-            log.info("LINE webhook listening on :%d/line/webhook", port)
+            logger.info("LINE webhook listening on :%d/line/webhook", port)
         else:
             self.register_routes(app)
         if not os.environ.get("HERMES_AUTO_APPROVE_TOOLS"):
-            log.warning(
+            logger.warning(
                 "LINE adapter suppresses self.send() to avoid Push API costs. "
                 "Tool-approval prompts cannot reach the user — set "
                 "HERMES_AUTO_APPROVE_TOOLS=1 to auto-approve, or sessions will hang "
@@ -445,7 +445,7 @@ class LineAdapter(BasePlatformAdapter):
         treat these as fatal.
         """
         preview = (content or "")[:80].replace("\n", " ")
-        log.info(
+        logger.info(
             "line: suppressed self.send chat_id=%s preview=%r",
             chat_id,
             preview,
@@ -519,12 +519,12 @@ class LineAdapter(BasePlatformAdapter):
         source = event.get("source", {})
         reply_token = event.get("replyToken")
         if not reply_token:
-            log.info(
+            logger.info(
                 "line: dropping message event without replyToken: source=%s",
                 source,
             )
             return
-        log.info(
+        logger.info(
             "line: received message src_type=%s user=%s text=%r",
             source.get("type"),
             source.get("userId"),
@@ -545,7 +545,7 @@ class LineAdapter(BasePlatformAdapter):
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                log.exception("LLM call failed for request_id=%s", request_id)
+                logger.exception("LLM call failed for request_id=%s", request_id)
                 self._cache.set_error(
                     request_id, f"⚠️ 處理失敗：{type(e).__name__}"
                 )
@@ -584,7 +584,7 @@ class LineAdapter(BasePlatformAdapter):
                     assert self._test_button_sent_event is not None
                     self._test_button_sent_event.set()
             except Exception:
-                log.exception("watcher failed for request_id=%s", request_id)
+                logger.exception("watcher failed for request_id=%s", request_id)
             finally:
                 assert self._test_idle_event is not None
                 self._test_idle_event.set()
@@ -598,7 +598,7 @@ class LineAdapter(BasePlatformAdapter):
     async def _handle_postback(self, event: dict[str, Any]) -> None:
         reply_token = event.get("replyToken")
         if not reply_token:
-            log.info("line: postback without replyToken: source=%s", event.get("source"))
+            logger.info("line: postback without replyToken: source=%s", event.get("source"))
             return
         try:
             payload = json.loads(event.get("postback", {}).get("data", "{}"))
@@ -643,7 +643,7 @@ class LineAdapter(BasePlatformAdapter):
     def _log_drop(self, event: dict[str, Any]) -> None:
         """Structured drop log so admins can discover new group/room IDs."""
         src = event.get("source", {})
-        log.info(
+        logger.info(
             "line.drop unauthorised src_type=%s user=%s group=%s room=%s",
             src.get("type"),
             src.get("userId"),
