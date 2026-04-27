@@ -382,6 +382,9 @@ class LineAdapter(BasePlatformAdapter):
         self._cache = RequestCache(ttl_seconds=config.request_cache_ttl_seconds)
         self._dedup = MessageDeduplicator()
         self._llm_call: Callable[..., Awaitable[str]] = self._real_llm_call
+        # Resolved at connect() time via GET /v2/bot/info. Falls back to
+        # LINE_BOT_DISPLAY_NAME env var override if set (useful for tests/offline).
+        self._bot_display_name: str = config.bot_display_name
         # Note: _background_tasks already initialized by BasePlatformAdapter.__init__.
         # Test sync events — created lazily on first dispatch (needs running loop).
         self._test_button_sent_event: asyncio.Event | None = None
@@ -439,6 +442,33 @@ class LineAdapter(BasePlatformAdapter):
             task.add_done_callback(_log_exc)
         return web.Response(status=200, text="ok")
 
+    async def _fetch_bot_info(self) -> None:
+        """Fetch bot display name from LINE API and cache it.
+
+        Only runs when require_mention=True and no manual override is set.
+        Failure is non-fatal — mention gate falls back to no-name (blocks all
+        group messages) and logs a warning so the operator knows to set
+        LINE_BOT_DISPLAY_NAME manually.
+        """
+        if not self._cfg.require_mention or self._bot_display_name:
+            return
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    "https://api.line.me/v2/bot/info",
+                    headers={"Authorization": f"Bearer {self._cfg.channel_access_token}"},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                self._bot_display_name = data.get("displayName", "")
+                logger.info("LINE bot display name resolved: %r", self._bot_display_name)
+        except Exception:
+            logger.warning(
+                "Failed to fetch LINE bot info — set LINE_BOT_DISPLAY_NAME manually "
+                "if you want group mention gating to work.",
+                exc_info=True,
+            )
+
     async def connect(self, app: web.Application | None = None) -> bool:  # type: ignore[override]
         # Optional `app` extends the abstract signature so the gateway runner
         # can inject its shared aiohttp.web.Application (mirrors WebhookAdapter).
@@ -455,6 +485,7 @@ class LineAdapter(BasePlatformAdapter):
             logger.info("LINE webhook listening on :%d/line/webhook", port)
         else:
             self.register_routes(app)
+        await self._fetch_bot_info()
         logger.warning(
             "LINE adapter suppresses self.send() to avoid Push API costs. "
             "Dangerous-command approval prompts cannot reach the user — sessions "
@@ -718,7 +749,7 @@ class LineAdapter(BasePlatformAdapter):
         src_type = source.get("type")
         if src_type in ("group", "room") and self._cfg.require_mention:
             trigger = (
-                f"@{self._cfg.bot_display_name}" if self._cfg.bot_display_name else None
+                f"@{self._bot_display_name}" if self._bot_display_name else None
             )
             if trigger and trigger not in text:
                 logger.info(
