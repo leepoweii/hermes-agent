@@ -374,6 +374,7 @@ Each platform has its own toolset:
 | CLI | `hermes-cli` | Full access |
 | Telegram | `hermes-telegram` | Full tools including terminal |
 | Discord | `hermes-discord` | Full tools including terminal |
+| LINE | `hermes-line` | Full tools including terminal |
 | WhatsApp | `hermes-whatsapp` | Full tools including terminal |
 | Slack | `hermes-slack` | Full tools including terminal |
 | Signal | `hermes-signal` | Full tools including terminal |
@@ -397,6 +398,7 @@ Each platform has its own toolset:
 
 - [Telegram Setup](telegram.md)
 - [Discord Setup](discord.md)
+- [LINE Setup](line.md)
 - [Slack Setup](slack.md)
 - [WhatsApp Setup](whatsapp.md)
 - [Signal Setup](signal.md)

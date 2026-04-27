@@ -221,6 +221,17 @@ For cloud sandbox backends, persistence is filesystem-oriented. `TERMINAL_LIFETI
 | `DISCORD_ALLOW_MENTION_ROLES` | Allow the bot to ping `@role` mentions (default: `false`). |
 | `DISCORD_ALLOW_MENTION_USERS` | Allow the bot to ping individual `@user` mentions (default: `true`). |
 | `DISCORD_ALLOW_MENTION_REPLIED_USER` | Ping the author when replying to their message (default: `true`). |
+| `LINE_CHANNEL_ACCESS_TOKEN` | Long-lived channel access token from LINE Developers console |
+| `LINE_CHANNEL_SECRET` | Channel secret for webhook signature verification |
+| `LINE_ALLOWED_USERS` | Comma-separated LINE user IDs (`U...`) allowed to use the bot |
+| `LINE_ALLOWED_GROUPS` | Comma-separated LINE group IDs (`C...`) |
+| `LINE_ALLOWED_ROOMS` | Comma-separated LINE room IDs (`R...`) |
+| `LINE_ALLOW_ALL_USERS` | Set to `true` to skip allowlist checks (development only) |
+| `LINE_WEBHOOK_PORT` | Port for the webhook listener (default: `8645`) |
+| `LINE_HOME_CHANNEL` | Default LINE user/group ID for cron delivery |
+| `LINE_PENDING_TEXT` | Override the "still thinking" message (default: English) |
+| `LINE_EXPIRED_TEXT` | Override the "response expired" message |
+| `LINE_DELIVERED_TEXT` | Override the "already replied" message |
 | `SLACK_BOT_TOKEN` | Slack bot token (`xoxb-...`) |
 | `SLACK_APP_TOKEN` | Slack app-level token (`xapp-...`, required for Socket Mode) |
 | `SLACK_ALLOWED_USERS` | Comma-separated Slack user IDs |

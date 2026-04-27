@@ -1,3 +1,9 @@
+---
+sidebar_position: 4
+title: "LINE"
+description: "Set up Hermes Agent as a LINE Messaging API bot"
+---
+
 # LINE Messaging API
 
 Hermes can run as a LINE bot in 1-on-1 chats, groups, and multi-person rooms.

@@ -34,7 +34,7 @@ hermes-agent/
 ├── tools/                # Tool implementations — auto-discovered via tools/registry.py
 │   └── environments/     # Terminal backends (local, docker, ssh, modal, daytona, singularity)
 ├── gateway/              # Messaging gateway — run.py + session.py + platforms/
-│   ├── platforms/        # Adapter per platform (telegram, discord, slack, whatsapp,
+│   ├── platforms/        # Adapter per platform (telegram, discord, line, slack, whatsapp,
 │   │                     #   homeassistant, signal, matrix, mattermost, email, sms,
 │   │                     #   dingtalk, wecom, weixin, feishu, qqbot, bluebubbles,
 │   │                     #   webhook, api_server, ...). See ADDING_A_PLATFORM.md.
