@@ -256,3 +256,88 @@ async def test_unconfigured_bot_replies_with_setup_notice(line_adapter_with_fast
     assert route.called
     sent = json.loads(route.calls.last.request.content)
     assert "not configured" in sent["messages"][0]["text"].lower()
+
+
+# ── Group mention gate ────────────────────────────────────────────────────────
+
+def _group_msg_event(text="hello", reply_token="rt", user="U1", group="C1"):
+    return {
+        "type": "message",
+        "replyToken": reply_token,
+        "source": {"type": "group", "userId": user, "groupId": group},
+        "timestamp": 1,
+        "message": {"id": "m", "type": "text", "text": text},
+    }
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_group_mention_required_drops_unaddressed(make_line_adapter):
+    """Group messages without @BotName are silently dropped when require_mention=True."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    adapter = make_line_adapter(
+        allowed_groups=["C1"],
+        require_mention=True,
+        bot_display_name="小茉",
+    )
+    await adapter.dispatch_event(_group_msg_event(text="hello"))
+    await adapter.wait_idle()
+    assert not route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_group_mention_passes_when_mentioned(make_line_adapter):
+    """Group messages with @BotName are forwarded to LLM with mention stripped."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    received_text: list[str] = []
+
+    adapter = make_line_adapter(
+        allowed_groups=["C1"],
+        require_mention=True,
+        bot_display_name="小茉",
+    )
+
+    async def capture_llm(text, source, event=None):
+        received_text.append(text)
+        return "ok"
+
+    adapter._llm_call = capture_llm
+    await adapter.dispatch_event(_group_msg_event(text="@小茉 幫我查一下"))
+    await adapter.wait_idle()
+    assert route.called
+    assert received_text == ["幫我查一下"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_group_no_gate_responds_to_all(make_line_adapter):
+    """When require_mention=False, group messages are always forwarded."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    adapter = make_line_adapter(allowed_groups=["C1"], require_mention=False)
+    await adapter.dispatch_event(_group_msg_event(text="hello"))
+    await adapter.wait_idle()
+    assert route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_dm_not_gated_even_with_require_mention(make_line_adapter):
+    """DMs bypass the mention gate even when require_mention=True."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    adapter = make_line_adapter(
+        require_mention=True,
+        bot_display_name="小茉",
+    )
+    dm_event = _msg_event(reply_token="rt", user="U1")  # source type = "user"
+    await adapter.dispatch_event(dm_event)
+    await adapter.wait_idle()
+    assert route.called

@@ -330,6 +330,10 @@ class LineAdapterConfig:
     allowed_rooms: list[str] = field(default_factory=list)
     slow_response_threshold_seconds: float = 50.0
     request_cache_ttl_seconds: int = 3600
+    # Group mention gating: if True, group/room chats only respond when the
+    # bot display name is @-mentioned (e.g. "@小茉"). DMs are never gated.
+    require_mention: bool = False
+    bot_display_name: str = ""  # e.g. "小茉"
 
     @classmethod
     def from_env(cls) -> LineAdapterConfig:
@@ -343,6 +347,9 @@ class LineAdapterConfig:
             raw = os.environ.get(name, "").strip()
             return [item.strip() for item in raw.split(",") if item.strip()]
 
+        def _bool(name: str) -> bool:
+            return os.environ.get(name, "").lower() in ("true", "1", "yes")
+
         return cls(
             channel_access_token=_required("LINE_CHANNEL_ACCESS_TOKEN"),
             channel_secret=_required("LINE_CHANNEL_SECRET"),
@@ -355,6 +362,8 @@ class LineAdapterConfig:
             request_cache_ttl_seconds=int(
                 os.environ.get("LINE_CACHE_TTL", "3600")
             ),
+            require_mention=_bool("LINE_REQUIRE_MENTION"),
+            bot_display_name=os.environ.get("LINE_BOT_DISPLAY_NAME", "").strip(),
         )
 
 
@@ -703,9 +712,27 @@ class LineAdapter(BasePlatformAdapter):
             source.get("userId"),
             text[:80],
         )
+
+        # Group mention gate — only respond when @-mentioned in group/room chats.
+        # DMs (src_type == "user") are never gated.
+        src_type = source.get("type")
+        if src_type in ("group", "room") and self._cfg.require_mention:
+            trigger = (
+                f"@{self._cfg.bot_display_name}" if self._cfg.bot_display_name else None
+            )
+            if trigger and trigger not in text:
+                logger.info(
+                    "line: group message not addressed to bot — silent drop (trigger=%r)",
+                    trigger,
+                )
+                self._test_idle_event.set()
+                return
+            if trigger:
+                text = text.replace(trigger, "").strip()
+
         # Show typing indicator in 1-on-1 chats (LINE limitation: groups don't support it).
         # Best-effort, fire-and-forget.
-        if source.get("type") == "user":
+        if src_type == "user":
             user_id = source.get("userId")
             if user_id:
                 asyncio.create_task(self._reply.show_loading(user_id, seconds=30))
