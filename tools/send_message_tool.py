@@ -128,7 +128,7 @@ SEND_MESSAGE_SCHEMA = {
             },
             "target": {
                 "type": "string",
-                "description": "Delivery target. Format: 'platform' (uses home channel), 'platform:#channel-name', 'platform:chat_id', or 'platform:chat_id:thread_id' for Telegram topics and Discord threads. Examples: 'telegram', 'telegram:-1001234567890:17585', 'discord:999888777:555444333', 'discord:#bot-home', 'slack:#engineering', 'signal:+155****4567', 'matrix:!roomid:server.org', 'matrix:@user:server.org', 'yuanbao:direct:<account_id>' (DM), 'yuanbao:group:<group_code>' (group chat)"
+                "description": "Delivery target. Format: 'platform' (uses home channel), 'platform:#channel-name', 'platform:chat_id', or 'platform:chat_id:thread_id' for Telegram topics and Discord threads. Examples: 'telegram', 'telegram:-1001234567890:17585', 'discord:999888777:555444333', 'discord:#bot-home', 'slack:#engineering', 'line:U1234567890abcdef', 'signal:+155****4567', 'matrix:!roomid:server.org', 'matrix:@user:server.org', 'yuanbao:direct:<account_id>' (DM), 'yuanbao:group:<group_code>' (group chat)"
             },
             "message": {
                 "type": "string",
@@ -208,6 +208,7 @@ def _handle_send(args):
     platform_map = {
         "telegram": Platform.TELEGRAM,
         "discord": Platform.DISCORD,
+        "line": Platform.LINE,
         "slack": Platform.SLACK,
         "whatsapp": Platform.WHATSAPP,
         "signal": Platform.SIGNAL,
@@ -599,6 +600,8 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
             result = await _send_bluebubbles(pconfig.extra, chat_id, chunk)
         elif platform == Platform.QQBOT:
             result = await _send_qqbot(pconfig, chat_id, chunk)
+        elif platform == Platform.LINE:
+            result = await _send_line(pconfig, chat_id, chunk)
         else:
             result = {"error": f"Direct sending not yet implemented for {platform.value}"}
 
@@ -1567,6 +1570,41 @@ async def _send_yuanbao(chat_id, message, media_files=None):
         return await send_yuanbao_direct(adapter, chat_id, message, media_files=media_files)
     except Exception as e:
         return _error(f"Yuanbao send failed: {e}")
+
+
+async def _send_line(pconfig, chat_id: str, message: str):
+    """Send a message to a LINE user/group via Push API.
+
+    Uses Push API (not Reply API) because send_message/cron runs outside
+    a webhook handler and has no reply token.
+
+    Requires LINE_CHANNEL_ACCESS_TOKEN in pconfig.token.
+    Push API costs a message credit on LINE's paid plan.
+    """
+    token = pconfig.token or ""
+    if not token:
+        return _error("LINE: LINE_CHANNEL_ACCESS_TOKEN not configured.")
+
+    # Split at LINE's 5000-char limit
+    chunks = [message[i:i + 5000] for i in range(0, len(message), 5000)][:5]
+    messages = [{"type": "text", "text": chunk} for chunk in chunks]
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                "https://api.line.me/v2/bot/message/push",
+                json={"to": chat_id, "messages": messages},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+            )
+            resp.raise_for_status()
+            return {"success": True, "platform": "line", "chat_id": chat_id}
+    except Exception as exc:
+        logger.exception("[line] push send failed for chat_id=%s", chat_id)
+        return _error(f"LINE push failed: {exc}")
 
 
 # --- Registry ---
