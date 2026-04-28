@@ -481,6 +481,9 @@ class LineAdapter(BasePlatformAdapter):
         # Optional `app` extends the abstract signature so the gateway runner
         # can inject its shared aiohttp.web.Application (mirrors WebhookAdapter).
         # Called with no args by GatewayRunner, so the override is safe.
+        # Resolve bot info BEFORE accepting webhooks so the mention gate
+        # never has a cold-start window with bot_display_name unresolved.
+        await self._fetch_bot_info()
         if app is None:
             app = web.Application()
             self.register_routes(app)
@@ -493,7 +496,6 @@ class LineAdapter(BasePlatformAdapter):
             logger.info("LINE webhook listening on :%d/line/webhook", port)
         else:
             self.register_routes(app)
-        await self._fetch_bot_info()
         logger.warning(
             "LINE adapter suppresses self.send() to avoid Push API costs. "
             "Dangerous-command approval prompts cannot reach the user — sessions "

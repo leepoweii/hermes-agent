@@ -369,12 +369,13 @@ async def test_room_mention_required_drops_unaddressed(make_line_adapter):
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_group_require_mention_with_empty_bot_name_drops_all(make_line_adapter):
+async def test_group_require_mention_with_empty_bot_name_drops_all(make_line_adapter, caplog):
     """Fail-closed: require_mention=True + empty bot_display_name drops everything in groups.
 
     Scenario: _fetch_bot_info failed and operator forgot to set LINE_BOT_DISPLAY_NAME.
     Better to silently drop than to silently respond to the entire group.
     """
+    import logging
     route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
         return_value=Response(200, json={})
     )
@@ -383,9 +384,14 @@ async def test_group_require_mention_with_empty_bot_name_drops_all(make_line_ada
         require_mention=True,
         bot_display_name="",  # auto-fetch failed, no manual override
     )
-    await adapter.dispatch_event(_group_msg_event(text="hello"))
-    await adapter.wait_idle()
+    with caplog.at_level(logging.WARNING, logger="gateway.platforms.line"):
+        await adapter.dispatch_event(_group_msg_event(text="hello"))
+        await adapter.wait_idle()
     assert not route.called
+    assert any(
+        "require_mention=True but bot_display_name is empty" in r.message
+        for r in caplog.records
+    ), "operator-facing warning should fire when gate is fail-closed at runtime"
 
 
 @pytest.mark.asyncio
