@@ -68,7 +68,7 @@ There is no UI in the LINE Developers Console to list group IDs. The adapter log
 
 - Replies use the **LINE Reply API** (free, 60-second token window).
 - If an LLM response takes longer than ~50 seconds, the bot sends a Quick Reply button (`📋 Show response`, overridable via `LINE_BUTTON_LABEL`). When any user in the chat taps it, the cached answer is delivered using a fresh reply token from the postback event.
-- **Standard replies use the LINE Reply API** (free). Push API is used for image sends and tool-initiated `send_message` calls — these consume message credits on paid plans.
+- **Standard replies use the LINE Reply API** (free). Push API is used for image sends, tool-initiated `send_message` calls, and cron-job deliveries (`deliver: line` / `LINE_HOME_CHANNEL`) — each Push API call counts against your LINE plan's monthly message quota.
 
 ## Group / room behaviour
 
@@ -77,7 +77,20 @@ There is no UI in the LINE Developers Console to list group IDs. The adapter log
 
 ## Tool-approval prompts
 
-The LINE adapter suppresses incidental `self.send()` calls (cost-saving — avoids LINE Push API). This means **dangerous-command approval prompts cannot reach the user** — sessions will hang on any approval-gated tool call. To mitigate: pre-approve trusted commands with `/approve always` in a LINE conversation, or configure the agent to avoid triggering dangerous-command gates (shell execution, file deletion).
+The LINE adapter suppresses incidental `self.send()` calls (cost-saving — avoids LINE Push API). This means **dangerous-command approval prompts cannot reach the user** — from your perspective the bot becomes unresponsive: the ~50-second "Show response" button fires, but tapping it returns "Still thinking…" indefinitely because the agent is blocked waiting for an approval that can never arrive.
+
+To mitigate: pre-approve trusted commands with `/approve always` in a LINE conversation, or configure the agent to avoid triggering dangerous-command gates (shell execution, file deletion).
+
+## Localization
+
+All user-facing strings sent by the bot can be overridden via environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `LINE_BUTTON_LABEL` | `📋 Show response` | Label on the Quick Reply button for slow responses |
+| `LINE_PENDING_TEXT` | `Still thinking…` | Text shown when tapping the button before the answer is ready |
+| `LINE_EXPIRED_TEXT` | `Response expired — please ask again.` | Text shown when the cache TTL has elapsed |
+| `LINE_DELIVERED_TEXT` | `Already replied.` | Text shown on a duplicate postback tap |
 
 ## Troubleshooting
 

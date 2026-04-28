@@ -218,6 +218,30 @@ async def test_non_text_message_type_is_ignored(line_adapter_with_fast_llm):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_watcher_button_delivery_failure_logs_warning(line_adapter_with_slow_llm, caplog):
+    """When the LINE API rejects the Quick Reply button send, a warning is logged.
+
+    The LLM answer still lands in the cache (READY) when it arrives, but the
+    user has no button to tap. The warning gives operators a correlation handle.
+    """
+    import logging
+    respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(429, json={"message": "Too Many Requests"})
+    )
+    event = _msg_event(reply_token="rt-fail", user="U1")
+    with caplog.at_level(logging.WARNING, logger="gateway.platforms.line"):
+        await line_adapter_with_slow_llm.dispatch_event(event)
+        await line_adapter_with_slow_llm.wait_idle()
+    assert any("button delivery failed" in r.message for r in caplog.records), (
+        "Expected a WARNING about button delivery failure — check watcher timeout path"
+    )
+    assert any("rt-fail"[:8] in r.message for r in caplog.records), (
+        "Warning should include the reply token prefix for operator correlation"
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_unconfigured_bot_replies_with_setup_notice(line_adapter_with_fast_llm):
     """When _message_handler is None (no LLM configured), allowed users see setup notice."""
     route = respx.post("https://api.line.me/v2/bot/message/reply").mock(

@@ -179,7 +179,7 @@ class RequestCache:
         - READY/DELIVERED entries older than ``ttl_seconds`` (by ``updated_at``)
         - PENDING entries older than ``pending_ttl_seconds`` (by ``created_at``)
 
-    Not safe across threads — single-event-loop only.
+    Not thread-safe — relies on cooperative single-event-loop scheduling.
     """
 
     def __init__(
@@ -201,15 +201,15 @@ class RequestCache:
 
     def set_ready(self, request_id: str, payload: Any) -> None:
         entry = self._entries.get(request_id)
-        if entry is None:
-            return  # task was cancelled / cache was wiped — nothing to do
+        if entry is None or entry.state is not State.PENDING:
+            return  # task cancelled, cache wiped, or already transitioned
         entry.state = State.READY
         entry.payload = payload
         entry.updated_at = time.time()
 
     def set_error(self, request_id: str, error_msg: str) -> None:
         entry = self._entries.get(request_id)
-        if entry is None:
+        if entry is None or entry.state is not State.PENDING:
             return
         entry.state = State.ERROR
         entry.payload = error_msg
@@ -217,7 +217,7 @@ class RequestCache:
 
     def mark_delivered(self, request_id: str) -> None:
         entry = self._entries.get(request_id)
-        if entry is None:
+        if entry is None or entry.state not in (State.READY, State.ERROR):
             return
         entry.state = State.DELIVERED
         entry.updated_at = time.time()
@@ -412,6 +412,8 @@ class LineAdapter(BasePlatformAdapter):
         self._cache.prune()
         events = parse_events(body)
         # Return 200 immediately so LINE doesn't retry and show_loading fires ASAP.
+        # Delivery is at-most-once: a process restart between dedup-mark and dispatch
+        # causes the event to be silently dropped on the retry.
         for ev in events:
             event_id = ev.get("webhookEventId", "")
             if event_id and self._dedup.is_duplicate(event_id):
@@ -419,7 +421,13 @@ class LineAdapter(BasePlatformAdapter):
                 continue
             task = asyncio.create_task(self.dispatch_event(ev))
             self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
+
+            def _log_exc(t: asyncio.Task) -> None:
+                self._background_tasks.discard(t)
+                if not t.cancelled() and t.exception() is not None:
+                    logger.exception("line: dispatch_event crashed", exc_info=t.exception())
+
+            task.add_done_callback(_log_exc)
         return web.Response(status=200, text="ok")
 
     async def connect(self, app: Optional[web.Application] = None) -> bool:  # type: ignore[override]
@@ -546,13 +554,21 @@ class LineAdapter(BasePlatformAdapter):
         """Split text into LINE message segment dicts (max 5000 chars, max 5 per call).
 
         The 5-message cap matches LINE's per-call limit for both Reply and Push APIs.
-        Responses longer than 25,000 chars are silently truncated at 5 segments.
+        Responses longer than 25,000 chars are truncated; the last segment gets a
+        "… (truncated)" suffix so users know the answer was cut off.
         Empty text returns a single placeholder so LINE never receives an empty messages array.
         """
         if not text:
             return [{"type": "text", "text": "(no response)"}]
         max_len = LineAdapter.MAX_MESSAGE_LENGTH
-        chunks = [text[i:i + max_len] for i in range(0, len(text), max_len)][:5]
+        all_chunks = [text[i:i + max_len] for i in range(0, len(text), max_len)]
+        truncated = len(all_chunks) > 5
+        chunks = all_chunks[:5]
+        if truncated:
+            suffix = "\n… (truncated)"
+            last = chunks[-1]
+            if len(last) + len(suffix) <= max_len:
+                chunks[-1] = last + suffix
         return [{"type": "text", "text": chunk} for chunk in chunks]
 
     async def _push_text(self, chat_id: str, text: str) -> SendResult:
@@ -741,8 +757,23 @@ class LineAdapter(BasePlatformAdapter):
                         button_label=SHOW_RESPONSE_BUTTON_LABEL,
                         request_id=request_id,
                     )
-                    await self._reply.reply(reply_token, [msg])
-                    self._test_button_sent_event.set()
+                    try:
+                        await self._reply.reply(reply_token, [msg])
+                        self._test_button_sent_event.set()
+                    except Exception as exc:
+                        # Reply token expired or LINE API error — the button was
+                        # never delivered. The LLM answer will still be stored in
+                        # the cache (READY) when it arrives, but the user has no
+                        # button to tap. The answer will be lost at TTL expiry.
+                        # Operators should pre-approve slow tools or reduce
+                        # slow_response_threshold to leave a wider delivery window.
+                        logger.warning(
+                            "line: button delivery failed for request_id=%s "
+                            "(token_prefix=%s) — user will not see 'Show response' button: %s",
+                            request_id,
+                            reply_token[:8] if reply_token else "?",
+                            exc,
+                        )
             except Exception:
                 logger.exception("watcher failed for request_id=%s", request_id)
             finally:
