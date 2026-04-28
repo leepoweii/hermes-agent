@@ -104,3 +104,34 @@ def test_prune_removes_old_pending_via_ceiling_ttl():
     cache.prune()
 
     assert cache.get(rid) is None
+
+
+# ---- State-machine guard tests ----
+
+def test_set_ready_after_delivered_is_noop():
+    """set_ready on a DELIVERED entry must not roll the state back."""
+    cache = RequestCache()
+    rid = cache.register_pending()
+    cache.set_ready(rid, "first")
+    cache.mark_delivered(rid)
+    cache.set_ready(rid, "second")
+    entry = cache.get(rid)
+    assert entry.state is State.DELIVERED
+    assert entry.payload == "first"
+
+
+def test_set_error_after_delivered_is_noop():
+    cache = RequestCache()
+    rid = cache.register_pending()
+    cache.set_ready(rid, "ok")
+    cache.mark_delivered(rid)
+    cache.set_error(rid, "late error")
+    assert cache.get(rid).state is State.DELIVERED
+
+
+def test_mark_delivered_on_pending_is_noop():
+    """Marking a still-PENDING entry delivered must be a no-op."""
+    cache = RequestCache()
+    rid = cache.register_pending()
+    cache.mark_delivered(rid)
+    assert cache.get(rid).state is State.PENDING

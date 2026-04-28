@@ -119,3 +119,10 @@ def test_chunk_text_unicode_codepoints_not_bytes(line_adapter_with_fast_llm):
     segs = line_adapter_with_fast_llm._chunk_text(text)
     assert len(segs) == 1
     assert segs[0]["text"] == text
+
+
+def test_chunk_text_appends_truncated_suffix_when_over_five_segments(line_adapter_with_fast_llm):
+    text = "b" * (5000 * 6)  # 30,000 chars → 6 segments, capped at 5
+    segs = line_adapter_with_fast_llm._chunk_text(text)
+    assert len(segs) == 5
+    assert segs[-1]["text"].endswith("\n… (truncated)")

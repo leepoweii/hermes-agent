@@ -567,8 +567,10 @@ class LineAdapter(BasePlatformAdapter):
         if truncated:
             suffix = "\n… (truncated)"
             last = chunks[-1]
-            if len(last) + len(suffix) <= max_len:
-                chunks[-1] = last + suffix
+            # Always append suffix; trim last chunk if needed to stay within max_len.
+            if len(last) + len(suffix) > max_len:
+                last = last[:max_len - len(suffix)]
+            chunks[-1] = last + suffix
         return [{"type": "text", "text": chunk} for chunk in chunks]
 
     async def _push_text(self, chat_id: str, text: str) -> SendResult:

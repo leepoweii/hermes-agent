@@ -88,9 +88,9 @@ All user-facing strings sent by the bot can be overridden via environment variab
 | Variable | Default | Description |
 |---|---|---|
 | `LINE_BUTTON_LABEL` | `📋 Show response` | Label on the Quick Reply button for slow responses |
-| `LINE_PENDING_TEXT` | `Still thinking…` | Text shown when tapping the button before the answer is ready |
+| `LINE_PENDING_TEXT` | `🤔 Still thinking, please wait. If no reply arrives, resend your message.` | Text shown when tapping the button before the answer is ready |
 | `LINE_EXPIRED_TEXT` | `Response expired — please ask again.` | Text shown when the cache TTL has elapsed |
-| `LINE_DELIVERED_TEXT` | `Already replied.` | Text shown on a duplicate postback tap |
+| `LINE_DELIVERED_TEXT` | `Already replied ✅` | Text shown on a duplicate postback tap |
 
 ## Troubleshooting
 
