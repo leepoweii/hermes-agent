@@ -106,6 +106,7 @@ Platform toolsets define the complete tool configuration for a deployment target
 | `hermes-dingtalk` | Same as `hermes-cli`. |
 | `hermes-feishu` | Same as `hermes-cli`. Note: the `feishu_doc` / `feishu_drive` toolsets are used only by the document-comment handler, not by the regular Feishu chat adapter. |
 | `hermes-qqbot` | Same as `hermes-cli`. |
+| `hermes-line` | Same as `hermes-cli`. |
 | `hermes-wecom` | Same as `hermes-cli`. |
 | `hermes-wecom-callback` | Same as `hermes-cli`. |
 | `hermes-weixin` | Same as `hermes-cli`. |

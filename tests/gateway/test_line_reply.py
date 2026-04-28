@@ -16,12 +16,12 @@ from gateway.platforms.line import (
 
 def test_build_quick_reply_button_message_carries_request_id():
     msg = build_quick_reply_button_message(
-        text="🤔 思考中...",
-        button_label="📋 點此查看答案",
+        text=PENDING_REPLY_TEXT,
+        button_label="📋 Show response",
         request_id="rid-123",
     )
     assert msg["type"] == "text"
-    assert msg["text"] == "🤔 思考中..."
+    assert msg["text"] == PENDING_REPLY_TEXT
     items = msg["quickReply"]["items"]
     assert len(items) == 1
     action = items[0]["action"]
