@@ -105,7 +105,9 @@ LINE_ALLOWED_GROUPS=Caaa,Cbbb,Cccc
 LINE_FREE_RESPONSE_GROUPS=Cccc      # Cccc bypasses the mention gate
 ```
 
-Mirrors Telegram's `TELEGRAM_FREE_RESPONSE_CHATS`.
+> **Note:** Free-response IDs **must still appear** in `LINE_ALLOWED_GROUPS` / `LINE_ALLOWED_ROOMS`. The free-response setting only bypasses the mention check, not the allowlist (the allowlist is the trust boundary).
+
+Mirrors Telegram's `TELEGRAM_FREE_RESPONSE_CHATS`. The split into separate `_GROUPS` / `_ROOMS` env vars (vs Telegram's single `_CHATS`) follows LINE's source model: groups (`Cxxx…`) and rooms (`Rxxx…`) are distinct ID namespaces with different semantics — groups are persistent named chats, rooms are ad-hoc multi-user chats spawned from 1:1.
 
 ## Tool-approval prompts
 

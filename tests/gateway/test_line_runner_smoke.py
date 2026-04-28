@@ -31,3 +31,25 @@ async def test_connect_with_shared_app_registers_routes():
     routes = [r.resource.canonical for r in shared_app.router.routes()]
     assert "/line/webhook" in routes
     assert "/line/webhook/health" in routes
+
+
+@pytest.mark.asyncio
+async def test_connect_warns_when_free_response_id_not_in_allowlist(caplog):
+    """Operator footgun: free_response_groups contains an ID missing from
+    allowed_groups → allowlist drops the message before free-response can fire.
+    connect() should log a clear WARNING so operators catch the misconfiguration."""
+    import logging
+    cfg = LineAdapterConfig(
+        channel_access_token="t",
+        channel_secret="s",
+        allowed_groups=["Callowed"],
+        free_response_groups=["Cunreachable", "Callowed"],  # Cunreachable not in allowlist
+    )
+    adapter = LineAdapter.from_config(cfg)
+    shared_app = web.Application()
+    with caplog.at_level(logging.WARNING, logger="gateway.platforms.line"):
+        await adapter.connect(shared_app)
+    assert any(
+        "Cunreachable" in r.message and "free_response_groups" in r.message
+        for r in caplog.records
+    )

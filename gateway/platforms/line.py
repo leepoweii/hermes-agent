@@ -491,6 +491,23 @@ class LineAdapter(BasePlatformAdapter):
         # Resolve bot info BEFORE accepting webhooks so the mention gate
         # never has a cold-start window with bot_display_name unresolved.
         await self._fetch_bot_info()
+        # Warn on the most common operator footgun: a group/room is in
+        # free_response_* but missing from the allowlist, so the allowlist
+        # check silently drops the message before free-response can fire.
+        unreachable_groups = set(self._cfg.free_response_groups) - set(self._cfg.allowed_groups)
+        unreachable_rooms = set(self._cfg.free_response_rooms) - set(self._cfg.allowed_rooms)
+        if unreachable_groups:
+            logger.warning(
+                "line: free_response_groups contains IDs not in LINE_ALLOWED_GROUPS — "
+                "messages will be silently dropped at the allowlist: %s",
+                sorted(unreachable_groups),
+            )
+        if unreachable_rooms:
+            logger.warning(
+                "line: free_response_rooms contains IDs not in LINE_ALLOWED_ROOMS — "
+                "messages will be silently dropped at the allowlist: %s",
+                sorted(unreachable_rooms),
+            )
         if app is None:
             app = web.Application()
             self.register_routes(app)
