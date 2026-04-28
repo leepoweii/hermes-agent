@@ -67,3 +67,12 @@ async def test_get_returns_405(aiohttp_client, app):
     client = await aiohttp_client(app)
     resp = await client.get("/line/webhook")
     assert resp.status == 405
+
+
+@pytest.mark.asyncio
+async def test_health_endpoint_returns_ok(aiohttp_client, app):
+    client = await aiohttp_client(app)
+    resp = await client.get("/line/webhook/health")
+    assert resp.status == 200
+    data = await resp.json()
+    assert data == {"status": "ok", "platform": "line"}

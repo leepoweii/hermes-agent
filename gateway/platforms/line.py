@@ -821,9 +821,10 @@ class LineAdapter(BasePlatformAdapter):
         Approval-prompt suppression: not needed here because we don't
         enter the session lifecycle that issues approval prompts. Tool
         approval (if a tool requires it during _message_handler) is
-        handled by the underlying agent in always-allow mode for LINE
-        deployments — operators should set HERMES_AUTO_APPROVE_TOOLS=1
-        or equivalent in env when running with LINE.
+        handled by the underlying agent — operators must pre-approve
+        trusted tools with /approve always in a LINE conversation, or
+        the session will hang waiting for an approval prompt that can
+        never reach the user.
         """
         if self._message_handler is None:
             raise RuntimeError(

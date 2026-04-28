@@ -200,6 +200,24 @@ async def test_postback_error_state_delivers_error(line_adapter_with_fast_llm):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_non_text_message_type_is_ignored(line_adapter_with_fast_llm):
+    """Sticker, image, audio etc. should be silently dropped — no reply sent."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    sticker_event = {
+        "type": "message",
+        "replyToken": "rt-sticker",
+        "source": {"type": "user", "userId": "U1"},
+        "timestamp": 1,
+        "message": {"id": "m2", "type": "sticker", "packageId": "1", "stickerId": "1"},
+    }
+    await line_adapter_with_fast_llm.dispatch_event(sticker_event)
+    assert not route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_unconfigured_bot_replies_with_setup_notice(line_adapter_with_fast_llm):
     """When _message_handler is None (no LLM configured), allowed users see setup notice."""
     route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
