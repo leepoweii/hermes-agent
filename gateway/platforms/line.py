@@ -16,7 +16,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 import httpx
 from aiohttp import web
@@ -454,7 +454,7 @@ class LineAdapter(BasePlatformAdapter):
         image_url: str,
         caption: Optional[str] = None,
         reply_to: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> SendResult:
         """Send an image via LINE Push API.
 
@@ -523,13 +523,24 @@ class LineAdapter(BasePlatformAdapter):
             error="LINE adapter does not support local file upload — HTTPS URL required",
         )
 
+    def _chunk_text(self, text: str) -> list[dict[str, Any]]:
+        """Split text into LINE message segment dicts (max 5000 chars, max 5 per call).
+
+        The 5-message cap matches LINE's per-call limit for both Reply and Push APIs.
+        Responses longer than 25,000 chars are silently truncated at 5 segments.
+        """
+        chunks = [
+            text[i:i + self.MAX_MESSAGE_LENGTH]
+            for i in range(0, len(text), self.MAX_MESSAGE_LENGTH)
+        ][:5]
+        return [{"type": "text", "text": chunk} for chunk in chunks]
+
     async def _push_text(self, chat_id: str, text: str) -> SendResult:
         """Send a plain text message via LINE Push API."""
         token = self._cfg.channel_access_token
         if not token:
             return SendResult(success=False, error="LINE: channel access token not set")
-        chunks = [text[i:i + self.MAX_MESSAGE_LENGTH] for i in range(0, len(text), self.MAX_MESSAGE_LENGTH)][:5]
-        messages = [{"type": "text", "text": chunk} for chunk in chunks]
+        messages = self._chunk_text(text)
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(
@@ -551,7 +562,7 @@ class LineAdapter(BasePlatformAdapter):
         chat_id: str,
         content: str,
         reply_to: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> SendResult:
         """Suppress incidental base-class send() calls (compaction, approval prompts, etc.).
 
@@ -569,7 +580,7 @@ class LineAdapter(BasePlatformAdapter):
             error="line_adapter_suppresses_push_sends",
         )
 
-    async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
+    async def get_chat_info(self, chat_id: str) -> dict[str, Any]:
         """Minimal stub — LINE Get Profile/Group APIs not wired.
 
         Detect chat type by LINE id prefix:
@@ -678,13 +689,13 @@ class LineAdapter(BasePlatformAdapter):
                     if entry and entry.state is State.READY:
                         await self._reply.reply(
                             reply_token,
-                            [{"type": "text", "text": entry.payload}],
+                            self._chunk_text(entry.payload),
                         )
                         self._cache.mark_delivered(request_id)
                     elif entry and entry.state is State.ERROR:
                         await self._reply.reply(
                             reply_token,
-                            [{"type": "text", "text": entry.payload}],
+                            self._chunk_text(entry.payload),
                         )
                         self._cache.mark_delivered(request_id)
                 except asyncio.TimeoutError:
@@ -736,7 +747,7 @@ class LineAdapter(BasePlatformAdapter):
             return
 
         if entry.state is State.READY:
-            await self._reply.reply(reply_token, [{"type": "text", "text": entry.payload}])
+            await self._reply.reply(reply_token, self._chunk_text(entry.payload))
             self._cache.mark_delivered(request_id)
             return
 
@@ -745,7 +756,7 @@ class LineAdapter(BasePlatformAdapter):
             return
 
         if entry.state is State.ERROR:
-            await self._reply.reply(reply_token, [{"type": "text", "text": entry.payload}])
+            await self._reply.reply(reply_token, self._chunk_text(entry.payload))
             self._cache.mark_delivered(request_id)
             return
 

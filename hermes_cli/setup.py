@@ -1801,8 +1801,8 @@ def _setup_line():
             elif total == 0:
                 print_info("⚠️  LINE: all allowlists empty — bot will silently drop every message")
                 if prompt_yes_no("Add allowed users now?", True):
-                    print_info("   您自己的 LINE User ID。從 LINE Developers Console")
-                    print_info("   → 您的 channel → Basic settings → 'Your user ID'")
+                    print_info("   Your LINE User ID: LINE Developers Console")
+                    print_info("   → your channel → Basic settings → 'Your user ID'")
                     allowed_users = prompt("Allowed user IDs (comma-separated)")
                     if allowed_users:
                         save_env_value("LINE_ALLOWED_USERS", allowed_users.replace(" ", ""))
@@ -1831,8 +1831,8 @@ def _setup_line():
 
     print()
     print_info("🔒 Security: Restrict who can use your bot")
-    print_info("   您自己的 LINE User ID。從 LINE Developers Console")
-    print_info("   → 您的 channel → Basic settings → 'Your user ID'")
+    print_info("   Your LINE User ID: LINE Developers Console")
+    print_info("   → your channel → Basic settings → 'Your user ID'")
     print_info("   ⚠️  ALL three allowlists are required (USERS for 1-on-1,")
     print_info("       GROUPS for groups, ROOMS for rooms). Empty list =")
     print_info("       no access for that source type. To allow all messages")
@@ -1850,8 +1850,8 @@ def _setup_line():
 
     print()
     print_info("👥 Group allowlist (optional)")
-    print_info("   群組 ID（C 開頭）。先空白部署，加 bot 進群組後傳訊息，")
-    print_info("   docker logs 找 'line.drop' 取得 ID 再回來填")
+    print_info("   Group ID (starts with C). Deploy first, add the bot to the group,")
+    print_info("   send a message, then check docker logs for 'line.drop' to get the ID")
     allowed_groups = prompt(
         "Allowed group IDs (comma-separated, leave empty)"
     )
@@ -1861,7 +1861,7 @@ def _setup_line():
 
     print()
     print_info("💬 Room allowlist (optional)")
-    print_info("   聊天室 ID（R 開頭，多人聊天室；非 LINE 群組）")
+    print_info("   Room ID (starts with R — multi-person chat room, not a LINE group)")
     allowed_rooms = prompt(
         "Allowed room IDs (comma-separated, leave empty)"
     )
