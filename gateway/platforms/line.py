@@ -631,6 +631,7 @@ class LineAdapter(BasePlatformAdapter):
         }
         if not is_allowed(event, cfg):
             self._log_drop(event)
+            self._test_idle_event.set()
             return  # silent drop
 
         # Pre-check: bot enabled but no LLM provider configured (Phase 1 /
