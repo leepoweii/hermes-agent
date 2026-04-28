@@ -1879,6 +1879,17 @@ def _setup_line():
             save_env_value("LINE_HOME_CHANNEL_NAME", home_channel_name.strip())
         print_success("LINE home channel configured")
 
+    print()
+    print_info("🔇 Group mention gating (optional — recommended for shared groups)")
+    require_mention = prompt("Only respond to @mentions in groups? (yes/no, default no)")
+    if require_mention.strip().lower() in ("yes", "y", "true", "1"):
+        save_env_value("LINE_REQUIRE_MENTION", "true")
+        print_info("Bot display name auto-fetched from /v2/bot/info at startup; override below if needed.")
+        bot_display_name = prompt("Bot display name override (optional, leave empty for auto-fetch)")
+        if bot_display_name:
+            save_env_value("LINE_BOT_DISPLAY_NAME", bot_display_name.strip())
+        print_success("LINE group mention gating enabled")
+
 
 def _setup_discord():
     """Configure Discord bot credentials and allowlist."""

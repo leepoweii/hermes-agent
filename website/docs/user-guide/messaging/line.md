@@ -75,6 +75,21 @@ There is no UI in the LINE Developers Console to list group IDs. The adapter log
 - All members in an allowed group share the same Hermes session (`group_sessions_per_user: false` recommended). This is the natural "team-style" UX. Override in config if you want per-user isolation.
 - Unauthorized members in an allowed group **do not** trigger a binding flow — the group itself is the trust boundary. Whoever the LINE group admin added is trusted by Hermes.
 
+## Group mention gating
+
+By default, the bot responds to **every** message in an allowed group/room — fine for dedicated bot groups but noisy for shared team chats. Set `LINE_REQUIRE_MENTION=true` to make the bot respond only when explicitly addressed:
+
+```env
+LINE_REQUIRE_MENTION=true
+# LINE_BOT_DISPLAY_NAME=  # optional — auto-fetched from /v2/bot/info at startup
+```
+
+Behaviour:
+- **Group/room messages** without `@<bot display name>` are silently dropped.
+- The mention token (e.g. `@小茉`) is **stripped** from the text before reaching the LLM, so the agent receives the clean question.
+- **DMs are never gated** — 1-on-1 conversations always pass through.
+- The bot display name is **auto-resolved** at `connect()` via `GET /v2/bot/info` using your channel access token. If the call fails, set `LINE_BOT_DISPLAY_NAME` manually — otherwise the gate blocks all group messages.
+
 ## Tool-approval prompts
 
 The LINE adapter suppresses incidental `self.send()` calls (cost-saving — avoids LINE Push API). This means **dangerous-command approval prompts cannot reach the user** — from your perspective the bot becomes unresponsive: the ~50-second "Show response" button fires, but tapping it returns "Still thinking…" indefinitely because the agent is blocked waiting for an approval that can never arrive.

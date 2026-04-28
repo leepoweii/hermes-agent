@@ -236,6 +236,8 @@ For cloud sandbox backends, persistence is filesystem-oriented. `TERMINAL_LIFETI
 | `LINE_EXPIRED_TEXT` | Override the "response expired" message |
 | `LINE_DELIVERED_TEXT` | Override the "already replied" message |
 | `LINE_BUTTON_LABEL` | Override the "Show response" quick-reply button label |
+| `LINE_REQUIRE_MENTION` | Set to `true` to require `@<bot>` in group/room chats; DMs always pass through |
+| `LINE_BOT_DISPLAY_NAME` | Manual override for the `@<bot>` mention token; auto-fetched from `/v2/bot/info` at startup if unset |
 | `SLACK_BOT_TOKEN` | Slack bot token (`xoxb-...`) |
 | `SLACK_APP_TOKEN` | Slack app-level token (`xapp-...`, required for Socket Mode) |
 | `SLACK_ALLOWED_USERS` | Comma-separated Slack user IDs |
