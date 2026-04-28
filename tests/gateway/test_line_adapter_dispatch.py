@@ -180,7 +180,7 @@ async def test_llm_exception_replies_with_error(line_adapter_with_fast_llm):
     await line_adapter_with_fast_llm.wait_idle()
     assert route.called
     sent = json.loads(route.calls.last.request.content)
-    assert "失敗" in sent["messages"][0]["text"]
+    assert "processing error" in sent["messages"][0]["text"].lower()
 
 
 @pytest.mark.asyncio

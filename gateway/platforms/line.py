@@ -18,8 +18,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-logger = logging.getLogger(__name__)
-
 import httpx
 from aiohttp import web
 
@@ -32,13 +30,14 @@ from gateway.platforms.base import (
 )
 from gateway.session import SessionSource
 
+logger = logging.getLogger(__name__)
+
 
 def check_line_requirements() -> bool:
-    """Check that LINE adapter dependencies are available.
+    """Return True when LINE adapter dependencies (httpx, aiohttp) are importable.
 
-    httpx and aiohttp are Hermes core dependencies, so this always returns
-    True. The function exists to satisfy the adapter factory contract in
-    gateway/run.py (every platform adapter must expose it).
+    Both are Hermes core dependencies, so this always returns True in practice.
+    Satisfies the adapter factory contract checked by gateway/run.py.
     """
     try:
         import httpx  # noqa: F401
@@ -590,10 +589,8 @@ class LineAdapter(BasePlatformAdapter):
 
     async def dispatch_event(self, event: dict[str, Any]) -> None:
         self._ensure_test_events()
-        if self._test_idle_event is None:
-            raise RuntimeError("_test_idle_event not initialised — call _ensure_test_events() first")
-        if self._test_button_sent_event is None:
-            raise RuntimeError("_test_button_sent_event not initialised — call _ensure_test_events() first")
+        assert self._test_idle_event is not None
+        assert self._test_button_sent_event is not None
         self._test_idle_event.clear()
         self._test_button_sent_event.clear()
         cfg = {
@@ -619,8 +616,6 @@ class LineAdapter(BasePlatformAdapter):
                     reply_token,
                     [{"type": "text", "text": "Bot is not configured yet — please contact the administrator."}],
                 )
-            if self._test_idle_event is None:
-                raise RuntimeError("_test_idle_event not initialised — call _ensure_test_events() first")
             self._test_idle_event.set()
             return
 
@@ -665,7 +660,7 @@ class LineAdapter(BasePlatformAdapter):
             except Exception as e:
                 logger.exception("LLM call failed for request_id=%s", request_id)
                 self._cache.set_error(
-                    request_id, f"⚠️ 處理失敗：{type(e).__name__}"
+                    request_id, f"⚠️ Processing error: {type(e).__name__}"
                 )
 
         llm_task = asyncio.create_task(_llm_then_dispatch())
@@ -699,14 +694,10 @@ class LineAdapter(BasePlatformAdapter):
                         request_id=request_id,
                     )
                     await self._reply.reply(reply_token, [msg])
-                    if self._test_button_sent_event is None:
-                        raise RuntimeError("_test_button_sent_event not initialised — call _ensure_test_events() first")
                     self._test_button_sent_event.set()
             except Exception:
                 logger.exception("watcher failed for request_id=%s", request_id)
             finally:
-                if self._test_idle_event is None:
-                    raise RuntimeError("_test_idle_event not initialised — call _ensure_test_events() first")
                 self._test_idle_event.set()
 
         watcher_task = asyncio.create_task(_watcher())
@@ -838,12 +829,10 @@ class LineAdapter(BasePlatformAdapter):
 
     async def wait_idle(self) -> None:
         self._ensure_test_events()
-        if self._test_idle_event is None:
-            raise RuntimeError("_test_idle_event not initialised — call _ensure_test_events() first")
+        assert self._test_idle_event is not None
         await self._test_idle_event.wait()
 
     async def wait_button_sent(self) -> None:
         self._ensure_test_events()
-        if self._test_button_sent_event is None:
-            raise RuntimeError("_test_button_sent_event not initialised — call _ensure_test_events() first")
+        assert self._test_button_sent_event is not None
         await self._test_button_sent_event.wait()

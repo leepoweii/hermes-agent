@@ -4,8 +4,6 @@ import hashlib
 import hmac
 import json
 
-import pytest
-
 from gateway.platforms.line import verify_signature, parse_events
 
 

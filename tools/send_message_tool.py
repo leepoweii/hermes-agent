@@ -456,6 +456,12 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
     except ImportError:
         _feishu_available = False
 
+    try:
+        from gateway.platforms.line import LineAdapter as _LineAdapter
+        _line_available = True
+    except ImportError:
+        _line_available = False
+
     media_files = media_files or []
 
     if platform == Platform.SLACK and message:
@@ -473,6 +479,8 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
     }
     if _feishu_available:
         _MAX_LENGTHS[Platform.FEISHU] = FeishuAdapter.MAX_MESSAGE_LENGTH
+    if _line_available:
+        _MAX_LENGTHS[Platform.LINE] = _LineAdapter.MAX_MESSAGE_LENGTH
 
     # Smart-chunk the message to fit within platform limits.
     # For short messages or platforms without a known limit this is a no-op.

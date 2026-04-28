@@ -67,7 +67,7 @@ There is no UI in the LINE Developers Console to list group IDs. The adapter log
 ## How responses work
 
 - Replies use the **LINE Reply API** (free, 60-second token window).
-- If an LLM response takes longer than ~50 seconds, the bot sends a Quick Reply button (`📋 點此查看答案`). When any user in the chat taps it, the cached answer is delivered using a fresh reply token from the postback event.
+- If an LLM response takes longer than ~50 seconds, the bot sends a Quick Reply button (`📋 Show response`, overridable via `LINE_BUTTON_LABEL`). When any user in the chat taps it, the cached answer is delivered using a fresh reply token from the postback event.
 - **No Push API is used** — there is no per-message cost.
 
 ## Group / room behaviour
@@ -86,5 +86,5 @@ The LINE adapter suppresses incidental `self.send()` calls (cost-saving — avoi
 | Webhook verification fails on LINE Console | Wrong URL, or HMAC mismatch (channel secret typo). |
 | Bot never replies in a group | Group ID not in `LINE_ALLOWED_GROUPS`; check `docker logs <container> \| grep line.drop`. |
 | Reply token expired error | LLM exceeded 60s and the postback flow also failed; check that Quick Reply payload includes a valid `request_id`. |
-| Bot replies "答案已過期，請重新提問" | Cache TTL (1 hour) elapsed, or container restarted while answer was PENDING. |
+| Bot replies "Response expired — please ask again." | Cache TTL (1 hour) elapsed, or container restarted while answer was PENDING. |
 | Tool calls never complete (session hangs) | `HERMES_AUTO_APPROVE_TOOLS` not set; approval prompts can't reach LINE users. |

@@ -6,7 +6,6 @@ cron scheduler's platform_map (which would silently ignore deliver='line').
 """
 import inspect
 
-from gateway.config import Platform
 from gateway.run import GatewayRunner
 
 
