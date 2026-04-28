@@ -480,7 +480,7 @@ class LineAdapter(BasePlatformAdapter):
             }
         ]
         if caption:
-            messages.extend(self._chunk_text(caption))
+            messages.extend(self._chunk_text(caption)[:4])  # 1 image + max 4 text = 5 per LINE limit
 
         try:
             async with httpx.AsyncClient(timeout=30) as client:
