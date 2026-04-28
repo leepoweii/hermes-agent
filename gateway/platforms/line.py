@@ -22,6 +22,7 @@ import httpx
 from aiohttp import web
 
 from gateway.config import Platform, PlatformConfig
+from gateway.platforms.helpers import MessageDeduplicator
 from gateway.platforms.base import (
     BasePlatformAdapter,
     MessageEvent,
@@ -348,6 +349,12 @@ class LineAdapterConfig:
             allowed_users=_csv("LINE_ALLOWED_USERS"),
             allowed_groups=_csv("LINE_ALLOWED_GROUPS"),
             allowed_rooms=_csv("LINE_ALLOWED_ROOMS"),
+            slow_response_threshold_seconds=float(
+                os.environ.get("LINE_SLOW_RESPONSE_THRESHOLD", "50")
+            ),
+            request_cache_ttl_seconds=int(
+                os.environ.get("LINE_CACHE_TTL", "3600")
+            ),
         )
 
 
@@ -364,6 +371,7 @@ class LineAdapter(BasePlatformAdapter):
         self._cfg = config
         self._reply = LineReplyClient(channel_access_token=config.channel_access_token)
         self._cache = RequestCache(ttl_seconds=config.request_cache_ttl_seconds)
+        self._dedup = MessageDeduplicator()
         self._llm_call: Callable[..., Awaitable[str]] = self._real_llm_call
         # Note: _background_tasks already initialized by BasePlatformAdapter.__init__.
         # Test sync events — created lazily on first dispatch (needs running loop).
@@ -390,15 +398,25 @@ class LineAdapter(BasePlatformAdapter):
         directly by tests / external owners of the aiohttp.web.Application.
         """
         app.router.add_post("/line/webhook", self._http_handler)
+        app.router.add_get("/line/webhook/health", self._handle_health)
+
+    async def _handle_health(self, request: web.Request) -> web.Response:
+        """GET /line/webhook/health — liveness probe for load balancers and k8s."""
+        return web.json_response({"status": "ok", "platform": "line"})
 
     async def _http_handler(self, request: web.Request) -> web.Response:
         body = await request.read()
         signature = request.headers.get("X-Line-Signature", "")
         if not verify_signature(body, signature, self._cfg.channel_secret):
             return web.Response(status=401, text="invalid signature")
+        self._cache.prune()
         events = parse_events(body)
         # Return 200 immediately so LINE doesn't retry and show_loading fires ASAP.
         for ev in events:
+            event_id = ev.get("webhookEventId", "")
+            if event_id and self._dedup.is_duplicate(event_id):
+                logger.info("line: ignoring duplicate webhookEventId=%s", event_id)
+                continue
             task = asyncio.create_task(self.dispatch_event(ev))
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)
@@ -420,13 +438,13 @@ class LineAdapter(BasePlatformAdapter):
             logger.info("LINE webhook listening on :%d/line/webhook", port)
         else:
             self.register_routes(app)
-        if not os.environ.get("HERMES_AUTO_APPROVE_TOOLS"):
-            logger.warning(
-                "LINE adapter suppresses self.send() to avoid Push API costs. "
-                "Tool-approval prompts cannot reach the user — set "
-                "HERMES_AUTO_APPROVE_TOOLS=1 to auto-approve, or sessions will hang "
-                "on any approval-gated tool call."
-            )
+        logger.warning(
+            "LINE adapter suppresses self.send() to avoid Push API costs. "
+            "Dangerous-command approval prompts cannot reach the user — sessions "
+            "will hang on any approval-gated tool call. "
+            "Mitigate by pre-approving trusted commands with '/approve always', "
+            "or ensure the agent does not trigger dangerous-command gates."
+        )
         return True
 
     async def disconnect(self) -> None:
@@ -642,7 +660,11 @@ class LineAdapter(BasePlatformAdapter):
     # ---- Message handler ----
 
     async def _handle_message(self, event: dict[str, Any]) -> None:
-        text = event.get("message", {}).get("text", "")
+        msg = event.get("message", {})
+        if msg.get("type") != "text":
+            logger.info("line: ignoring non-text message type=%s", msg.get("type"))
+            return
+        text = msg.get("text", "")
         source = event.get("source", {})
         reply_token = event.get("replyToken")
         if not reply_token:
@@ -701,6 +723,12 @@ class LineAdapter(BasePlatformAdapter):
                             self._chunk_text(entry.payload),
                         )
                         self._cache.mark_delivered(request_id)
+                    else:
+                        logger.error(
+                            "line: cache entry missing or wrong state for request_id=%s "
+                            "(pruned or cancelled?) — reply token likely expired",
+                            request_id,
+                        )
                 except asyncio.TimeoutError:
                     msg = build_quick_reply_button_message(
                         text=PENDING_REPLY_TEXT,

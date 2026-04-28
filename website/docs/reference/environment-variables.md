@@ -230,6 +230,8 @@ For cloud sandbox backends, persistence is filesystem-oriented. `TERMINAL_LIFETI
 | `LINE_WEBHOOK_PORT` | Port for the webhook listener (default: `8645`) |
 | `LINE_HOME_CHANNEL` | Default LINE user/group ID for cron delivery |
 | `LINE_HOME_CHANNEL_NAME` | Display name for the LINE home channel |
+| `LINE_SLOW_RESPONSE_THRESHOLD` | Seconds before the slow-response quick-reply button is sent (default: `50`) |
+| `LINE_CACHE_TTL` | Seconds to keep READY/DELIVERED cache entries (default: `3600`) |
 | `LINE_PENDING_TEXT` | Override the "still thinking" message (default: English) |
 | `LINE_EXPIRED_TEXT` | Override the "response expired" message |
 | `LINE_DELIVERED_TEXT` | Override the "already replied" message |

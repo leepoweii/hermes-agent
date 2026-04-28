@@ -1869,6 +1869,16 @@ def _setup_line():
         save_env_value("LINE_ALLOWED_ROOMS", allowed_rooms.replace(" ", ""))
         print_success("LINE room allowlist configured")
 
+    print()
+    print_info("🏠 Home channel (optional — needed for cron delivery and notifications)")
+    home_channel = prompt("Home channel ID (user/group/room ID, leave empty to set later with /sethome)")
+    if home_channel:
+        save_env_value("LINE_HOME_CHANNEL", home_channel.strip())
+        home_channel_name = prompt("Home channel display name (optional)")
+        if home_channel_name:
+            save_env_value("LINE_HOME_CHANNEL_NAME", home_channel_name.strip())
+        print_success("LINE home channel configured")
+
 
 def _setup_discord():
     """Configure Discord bot credentials and allowlist."""

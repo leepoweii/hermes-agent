@@ -77,7 +77,7 @@ There is no UI in the LINE Developers Console to list group IDs. The adapter log
 
 ## Tool-approval prompts
 
-The LINE adapter suppresses incidental `self.send()` calls (cost-saving — avoids LINE Push API). This means **tool-approval prompts cannot reach the user**. Set `HERMES_AUTO_APPROVE_TOOLS=1` in your `.env`, or sessions will hang on any approval-gated tool call. The adapter logs a startup WARNING if this env var is unset.
+The LINE adapter suppresses incidental `self.send()` calls (cost-saving — avoids LINE Push API). This means **dangerous-command approval prompts cannot reach the user** — sessions will hang on any approval-gated tool call. To mitigate: pre-approve trusted commands with `/approve always` in a LINE conversation, or configure the agent to avoid triggering dangerous-command gates (shell execution, file deletion).
 
 ## Troubleshooting
 
@@ -87,4 +87,4 @@ The LINE adapter suppresses incidental `self.send()` calls (cost-saving — avoi
 | Bot never replies in a group | Group ID not in `LINE_ALLOWED_GROUPS`; check `docker logs <container> \| grep line.drop`. |
 | Reply token expired error | LLM exceeded 60s and the postback flow also failed; check that Quick Reply payload includes a valid `request_id`. |
 | Bot replies "Response expired — please ask again." | Cache TTL (1 hour) elapsed, or container restarted while answer was PENDING. |
-| Tool calls never complete (session hangs) | `HERMES_AUTO_APPROVE_TOOLS` not set; approval prompts can't reach LINE users. |
+| Tool calls never complete (session hangs) | Approval prompts can't reach LINE users. Pre-approve trusted commands with `/approve always`. |
