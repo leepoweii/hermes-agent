@@ -238,6 +238,8 @@ For cloud sandbox backends, persistence is filesystem-oriented. `TERMINAL_LIFETI
 | `LINE_BUTTON_LABEL` | Override the "Show response" quick-reply button label |
 | `LINE_REQUIRE_MENTION` | Set to `true` to require `@<bot>` in group/room chats; DMs always pass through |
 | `LINE_BOT_DISPLAY_NAME` | Manual override for the `@<bot>` mention token; auto-fetched from `/v2/bot/info` at startup if unset |
+| `LINE_FREE_RESPONSE_GROUPS` | Comma-separated group IDs that bypass `LINE_REQUIRE_MENTION` (bot always responds in these groups) |
+| `LINE_FREE_RESPONSE_ROOMS` | Comma-separated room IDs that bypass `LINE_REQUIRE_MENTION` |
 | `SLACK_BOT_TOKEN` | Slack bot token (`xoxb-...`) |
 | `SLACK_APP_TOKEN` | Slack app-level token (`xapp-...`, required for Socket Mode) |
 | `SLACK_ALLOWED_USERS` | Comma-separated Slack user IDs |

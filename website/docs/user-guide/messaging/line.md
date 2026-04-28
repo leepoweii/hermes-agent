@@ -91,6 +91,22 @@ Behaviour:
 - The bot display name is **auto-resolved** at `connect()` via `GET /v2/bot/info` using your channel access token. If the call fails (or returns an empty name), the gate **fails closed**: all group/room messages are silently dropped until you set `LINE_BOT_DISPLAY_NAME` manually. Better to be silent than to accidentally respond to every message in a shared group.
 - The mention check is a **substring match** on the message text. Pick a distinctive bot display name (avoid generic `bot` or short ASCII strings) so the gate doesn't accidentally trigger on incidental `@text` patterns like email addresses.
 
+### Per-group escape hatch
+
+For "dedicated bot groups" where every message is bot-bound, list the group IDs in `LINE_FREE_RESPONSE_GROUPS` (or rooms in `LINE_FREE_RESPONSE_ROOMS`) and the bot will respond to every message there without requiring `@mention`. Useful for:
+
+- Personal AI assistant groups (just you + the bot)
+- Family/team shared assistant
+- Notification / ops channels
+
+```env
+LINE_REQUIRE_MENTION=true
+LINE_ALLOWED_GROUPS=Caaa,Cbbb,Cccc
+LINE_FREE_RESPONSE_GROUPS=Cccc      # Cccc bypasses the mention gate
+```
+
+Mirrors Telegram's `TELEGRAM_FREE_RESPONSE_CHATS`.
+
 ## Tool-approval prompts
 
 The LINE adapter suppresses incidental `self.send()` calls (cost-saving — avoids LINE Push API). This means **dangerous-command approval prompts cannot reach the user** — from your perspective the bot becomes unresponsive: the ~50-second "Show response" button fires, but tapping it returns "Still thinking…" indefinitely because the agent is blocked waiting for an approval that can never arrive.

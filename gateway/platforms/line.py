@@ -335,6 +335,11 @@ class LineAdapterConfig:
     # bot display name is @-mentioned (e.g. "@小茉"). DMs are never gated.
     require_mention: bool = False
     bot_display_name: str = ""  # e.g. "小茉"
+    # Per-source escape hatches: groups/rooms listed here always trigger the
+    # bot regardless of require_mention. Mirrors Telegram's free_response_chats
+    # — useful for "dedicated bot groups" where every message is bot-bound.
+    free_response_groups: list[str] = field(default_factory=list)
+    free_response_rooms: list[str] = field(default_factory=list)
 
     @classmethod
     def from_env(cls) -> LineAdapterConfig:
@@ -365,6 +370,8 @@ class LineAdapterConfig:
             ),
             require_mention=_bool("LINE_REQUIRE_MENTION"),
             bot_display_name=os.environ.get("LINE_BOT_DISPLAY_NAME", "").strip(),
+            free_response_groups=_csv("LINE_FREE_RESPONSE_GROUPS"),
+            free_response_rooms=_csv("LINE_FREE_RESPONSE_ROOMS"),
         )
 
 
@@ -760,7 +767,15 @@ class LineAdapter(BasePlatformAdapter):
         # in event.message.mention.mentionees[]; matching that would be more robust
         # but requires a richer event-shape contract — substring is good enough for v1).
         src_type = source.get("type")
-        if src_type in ("group", "room") and self._cfg.require_mention:
+        # free_response_groups/rooms bypass the mention gate entirely — designate
+        # "dedicated bot" group/room IDs here and the bot answers every message.
+        free_response = (
+            (src_type == "group"
+             and source.get("groupId") in self._cfg.free_response_groups)
+            or (src_type == "room"
+                and source.get("roomId") in self._cfg.free_response_rooms)
+        )
+        if src_type in ("group", "room") and self._cfg.require_mention and not free_response:
             if not self._bot_display_name:
                 # Fail-closed: gate is configured but bot name unresolved
                 # (auto-fetch failed and no manual override). Block all

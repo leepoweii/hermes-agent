@@ -345,6 +345,67 @@ async def test_dm_not_gated_even_with_require_mention(make_line_adapter):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_free_response_group_bypasses_mention_gate(make_line_adapter):
+    """Groups listed in free_response_groups respond to every message — no @mention required."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    adapter = make_line_adapter(
+        allowed_groups=["C1"],
+        require_mention=True,
+        bot_display_name="小茉",
+        free_response_groups=["C1"],  # ← bypass mention gate for C1
+    )
+    await adapter.dispatch_event(_group_msg_event(text="hello"))  # no @mention
+    await adapter.wait_idle()
+    assert route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_free_response_does_not_affect_other_groups(make_line_adapter):
+    """Groups NOT in free_response_groups still require @mention when require_mention=True."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    adapter = make_line_adapter(
+        allowed_groups=["C1", "C2"],
+        require_mention=True,
+        bot_display_name="小茉",
+        free_response_groups=["C2"],  # only C2 bypasses; C1 still gated
+    )
+    await adapter.dispatch_event(_group_msg_event(text="hello", group="C1"))
+    await adapter.wait_idle()
+    assert not route.called  # gate still applies to C1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_free_response_room_bypasses_mention_gate(make_line_adapter):
+    """Rooms listed in free_response_rooms also bypass the mention gate."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    adapter = make_line_adapter(
+        allowed_rooms=["R1"],
+        require_mention=True,
+        bot_display_name="小茉",
+        free_response_rooms=["R1"],
+    )
+    room_event = {
+        "type": "message",
+        "replyToken": "rt",
+        "source": {"type": "room", "userId": "U1", "roomId": "R1"},
+        "timestamp": 1,
+        "message": {"id": "m", "type": "text", "text": "hello"},  # no @mention
+    }
+    await adapter.dispatch_event(room_event)
+    await adapter.wait_idle()
+    assert route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_room_mention_required_drops_unaddressed(make_line_adapter):
     """Room sources behave identically to groups under require_mention."""
     route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
