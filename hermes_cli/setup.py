@@ -1890,10 +1890,10 @@ def _setup_line():
             save_env_value("LINE_BOT_DISPLAY_NAME", bot_display_name.strip())
         print_info("Free-response groups/rooms bypass the mention gate (always respond).")
         print_info("Useful for dedicated bot groups where every message is bot-bound.")
-        free_groups = prompt("Free-response group IDs (CSV, leave empty for none)")
+        free_groups = prompt("Free-response group IDs (comma-separated, leave empty)")
         if free_groups:
             save_env_value("LINE_FREE_RESPONSE_GROUPS", free_groups.strip())
-        free_rooms = prompt("Free-response room IDs (CSV, leave empty for none)")
+        free_rooms = prompt("Free-response room IDs (comma-separated, leave empty)")
         if free_rooms:
             save_env_value("LINE_FREE_RESPONSE_ROOMS", free_rooms.strip())
         print_success("LINE group mention gating enabled")
