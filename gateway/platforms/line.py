@@ -64,6 +64,10 @@ ALREADY_DELIVERED_TEXT = (
     os.environ.get("LINE_DELIVERED_TEXT")
     or "Already replied ✅"
 )
+SHOW_RESPONSE_BUTTON_LABEL = (
+    os.environ.get("LINE_BUTTON_LABEL")
+    or "📋 Show response"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +145,7 @@ def is_allowed(event: dict[str, Any], cfg: dict[str, list[str]]) -> bool:
 #     ERROR     → LLM raised; cached error text waiting to be shown
 #
 # Storage: dict in the adapter process. Not Redis-backed — container restart
-# drops PENDING entries (acceptable trade-off; users see "答案已過期").
+# drops PENDING entries (acceptable trade-off; users see the expiry reply text).
 #
 # Two TTLs:
 #     - ``ttl_seconds`` (default 1h) — applies to READY/DELIVERED entries,
@@ -192,7 +196,7 @@ class RequestCache:
         self._entries[rid] = CacheEntry(state=State.PENDING)
         return rid
 
-    def get(self, request_id: str) -> CacheEntry | None:
+    def get(self, request_id: str) -> Optional[CacheEntry]:
         return self._entries.get(request_id)
 
     def set_ready(self, request_id: str, payload: Any) -> None:
@@ -375,9 +379,7 @@ class LineAdapter(BasePlatformAdapter):
             self._test_button_sent_event = asyncio.Event()
 
     @classmethod
-    def from_config(cls, cfg: LineAdapterConfig | dict) -> LineAdapter:
-        if isinstance(cfg, dict):
-            cfg = LineAdapterConfig(**cfg)
+    def from_config(cls, cfg: LineAdapterConfig) -> LineAdapter:
         return cls(cfg)
 
     # ---- Abstract method overrides ----
@@ -403,7 +405,7 @@ class LineAdapter(BasePlatformAdapter):
             task.add_done_callback(self._background_tasks.discard)
         return web.Response(status=200, text="ok")
 
-    async def connect(self, app: web.Application | None = None) -> bool:
+    async def connect(self, app: Optional[web.Application] = None) -> bool:
         # HTTP route registration: if the gateway runner gives us a shared
         # aiohttp app we register on it. Otherwise we own the listener
         # ourselves (mirrors WebhookAdapter's standalone-server pattern).
@@ -552,16 +554,10 @@ class LineAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Suppress incidental base-class self.send() calls.
+        """Suppress incidental base-class send() calls (compaction, approval prompts, etc.).
 
-        LINE's main user response goes through the Reply API in
-        _handle_message / _handle_postback (reply_token is required and
-        only valid briefly). The base class also self-calls send() for
-        framework-internal status messages (compaction notices, approval
-        prompts, rate-limit notices, tool-result media). Those would
-        require LINE Push API which costs money — so we silent-log them
-        and return a non-success SendResult. Callers in base.py do not
-        treat these as fatal.
+        LINE replies go through the Reply API in _handle_message/_handle_postback.
+        Framework-internal sends would require Push API (costs money) — log and no-op.
         """
         preview = (content or "")[:80].replace("\n", " ")
         logger.info(
@@ -632,7 +628,7 @@ class LineAdapter(BasePlatformAdapter):
             await self._handle_message(event)
         elif event.get("type") == "postback":
             await self._handle_postback(event)
-        # Other event types ignored for v2.
+        # Other event types (follow, join, leave, etc.) are not handled.
 
     # ---- Message handler ----
 
@@ -699,7 +695,7 @@ class LineAdapter(BasePlatformAdapter):
                 except asyncio.TimeoutError:
                     msg = build_quick_reply_button_message(
                         text=PENDING_REPLY_TEXT,
-                        button_label="📋 點此查看答案",
+                        button_label=SHOW_RESPONSE_BUTTON_LABEL,
                         request_id=request_id,
                     )
                     await self._reply.reply(reply_token, [msg])
@@ -717,7 +713,7 @@ class LineAdapter(BasePlatformAdapter):
         self._background_tasks.add(watcher_task)
         watcher_task.add_done_callback(self._background_tasks.discard)
 
-    # ---- Postback handler (stub for Task 8) ----
+    # ---- Postback handler ----
 
     async def _handle_postback(self, event: dict[str, Any]) -> None:
         reply_token = event.get("replyToken")
@@ -742,7 +738,7 @@ class LineAdapter(BasePlatformAdapter):
         if entry.state is State.PENDING:
             msg = build_quick_reply_button_message(
                 text=PENDING_REPLY_TEXT,
-                button_label="📋 點此查看答案",
+                button_label=SHOW_RESPONSE_BUTTON_LABEL,
                 request_id=request_id,
             )
             await self._reply.reply(reply_token, [msg])

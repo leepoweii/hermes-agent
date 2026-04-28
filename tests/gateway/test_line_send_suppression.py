@@ -28,12 +28,20 @@ async def test_send_does_not_raise_and_logs(line_adapter_with_fast_llm, caplog):
 
 @pytest.mark.asyncio
 async def test_send_image_does_not_raise(line_adapter_with_fast_llm):
-    # send_image default impl in base.py forwards to self.send — must not raise.
-    result = await line_adapter_with_fast_llm.send_image(
-        chat_id="U1", image_url="https://example.com/x.png"
-    )
+    # send_image is implemented (Push API) and must not raise on network error.
+    # It returns a non-success SendResult rather than propagating the exception.
+    import respx
+    from httpx import Response
+
+    with respx.mock:
+        respx.post("https://api.line.me/v2/bot/message/push").mock(
+            return_value=Response(200, json={})
+        )
+        result = await line_adapter_with_fast_llm.send_image(
+            chat_id="U1", image_url="https://example.com/x.png"
+        )
     assert isinstance(result, SendResult)
-    assert result.success is False
+    assert result.success is True
 
 
 @pytest.mark.asyncio

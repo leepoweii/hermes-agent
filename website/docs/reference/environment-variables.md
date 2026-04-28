@@ -232,6 +232,7 @@ For cloud sandbox backends, persistence is filesystem-oriented. `TERMINAL_LIFETI
 | `LINE_PENDING_TEXT` | Override the "still thinking" message (default: English) |
 | `LINE_EXPIRED_TEXT` | Override the "response expired" message |
 | `LINE_DELIVERED_TEXT` | Override the "already replied" message |
+| `LINE_BUTTON_LABEL` | Override the "Show response" quick-reply button label |
 | `SLACK_BOT_TOKEN` | Slack bot token (`xoxb-...`) |
 | `SLACK_APP_TOKEN` | Slack app-level token (`xapp-...`, required for Socket Mode) |
 | `SLACK_ALLOWED_USERS` | Comma-separated Slack user IDs |

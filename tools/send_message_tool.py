@@ -1607,7 +1607,7 @@ async def _send_line(pconfig, chat_id, message):
             resp.raise_for_status()
             return {"success": True, "platform": "line", "chat_id": chat_id}
     except Exception as exc:
-        logger.exception("[line] push send failed for chat_id=%s", chat_id)
+        logger.warning("line: push send failed chat_id=%s: %s", chat_id, exc)
         return _error(f"LINE push failed: {exc}")
 
 
