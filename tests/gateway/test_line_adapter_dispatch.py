@@ -345,6 +345,30 @@ async def test_dm_not_gated_even_with_require_mention(make_line_adapter):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_room_mention_required_drops_unaddressed(make_line_adapter):
+    """Room sources behave identically to groups under require_mention."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    adapter = make_line_adapter(
+        allowed_rooms=["R1"],
+        require_mention=True,
+        bot_display_name="小茉",
+    )
+    room_event = {
+        "type": "message",
+        "replyToken": "rt",
+        "source": {"type": "room", "userId": "U1", "roomId": "R1"},
+        "timestamp": 1,
+        "message": {"id": "m", "type": "text", "text": "hello"},
+    }
+    await adapter.dispatch_event(room_event)
+    await adapter.wait_idle()
+    assert not route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_group_require_mention_with_empty_bot_name_drops_all(make_line_adapter):
     """Fail-closed: require_mention=True + empty bot_display_name drops everything in groups.
 
