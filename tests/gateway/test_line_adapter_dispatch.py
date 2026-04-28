@@ -406,6 +406,43 @@ async def test_free_response_room_bypasses_mention_gate(make_line_adapter):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_free_response_beats_empty_bot_name_fail_closed(make_line_adapter):
+    """free_response_groups bypasses BOTH the mention check AND the fail-closed
+    empty-name guard — the entire gate block is skipped, not just the @mention test."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    adapter = make_line_adapter(
+        allowed_groups=["C1"],
+        require_mention=True,
+        bot_display_name="",  # would fail-closed if gate runs
+        free_response_groups=["C1"],  # but bypasses the gate entirely
+    )
+    await adapter.dispatch_event(_group_msg_event(text="hello"))
+    await adapter.wait_idle()
+    assert route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_free_response_is_noop_when_require_mention_disabled(make_line_adapter):
+    """When require_mention=False the gate is already off; free_response config
+    is meaningless but must not break anything."""
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    adapter = make_line_adapter(
+        allowed_groups=["C1"],
+        require_mention=False,
+        free_response_groups=["C1"],  # redundant but should be tolerated
+    )
+    await adapter.dispatch_event(_group_msg_event(text="hello"))
+    await adapter.wait_idle()
+    assert route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_room_mention_required_drops_unaddressed(make_line_adapter):
     """Room sources behave identically to groups under require_mention."""
     route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
