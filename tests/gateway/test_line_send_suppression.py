@@ -111,3 +111,11 @@ def test_chunk_text_caps_at_five_segments(line_adapter_with_fast_llm):
     text = "a" * (5000 * 6)  # would be 6 segments without cap
     segs = line_adapter_with_fast_llm._chunk_text(text)
     assert len(segs) == 5
+
+
+def test_chunk_text_unicode_codepoints_not_bytes(line_adapter_with_fast_llm):
+    # 5000 CJK characters are 5000 Python codepoints → one segment (not split by UTF-8 bytes)
+    text = "中" * 5000
+    segs = line_adapter_with_fast_llm._chunk_text(text)
+    assert len(segs) == 1
+    assert segs[0]["text"] == text

@@ -327,9 +327,9 @@ PLATFORM_HINTS = {
         "You are on LINE Messaging. "
         "LINE does not render Markdown — use plain text only. "
         "Messages are limited to 5000 characters; split long responses into multiple messages. "
-        "You cannot proactively send messages (no push API access); "
-        "you can only reply to the current conversation turn. "
-        "Image, file, and voice delivery are not supported in this configuration."
+        "Replies go through the Reply API and are only possible within the current conversation turn. "
+        "Images can be sent via HTTPS URL (send_image); local file upload is not supported. "
+        "Voice and document delivery are not supported."
     ),
     "slack": (
         "You are in a Slack workspace communicating with your user. "

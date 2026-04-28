@@ -229,6 +229,7 @@ For cloud sandbox backends, persistence is filesystem-oriented. `TERMINAL_LIFETI
 | `LINE_ALLOW_ALL_USERS` | Set to `true` to skip allowlist checks (development only) |
 | `LINE_WEBHOOK_PORT` | Port for the webhook listener (default: `8645`) |
 | `LINE_HOME_CHANNEL` | Default LINE user/group ID for cron delivery |
+| `LINE_HOME_CHANNEL_NAME` | Display name for the LINE home channel |
 | `LINE_PENDING_TEXT` | Override the "still thinking" message (default: English) |
 | `LINE_EXPIRED_TEXT` | Override the "response expired" message |
 | `LINE_DELIVERED_TEXT` | Override the "already replied" message |
