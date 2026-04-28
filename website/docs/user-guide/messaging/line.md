@@ -88,7 +88,7 @@ Behaviour:
 - **Group/room messages** without `@<bot display name>` are silently dropped.
 - The mention token (e.g. `@小茉`) is **stripped** from the text before reaching the LLM, so the agent receives the clean question.
 - **DMs are never gated** — 1-on-1 conversations always pass through.
-- The bot display name is **auto-resolved** at `connect()` via `GET /v2/bot/info` using your channel access token. If the call fails, set `LINE_BOT_DISPLAY_NAME` manually — otherwise the gate blocks all group messages.
+- The bot display name is **auto-resolved** at `connect()` via `GET /v2/bot/info` using your channel access token. If the call fails (or returns an empty name), the gate **fails closed**: all group/room messages are silently dropped until you set `LINE_BOT_DISPLAY_NAME` manually. Better to be silent than to accidentally respond to every message in a shared group.
 
 ## Tool-approval prompts
 

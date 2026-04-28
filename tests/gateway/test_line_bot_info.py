@@ -56,6 +56,21 @@ async def test_fetch_bot_info_skipped_when_manual_override_set():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_fetch_bot_info_empty_display_name_treated_as_failure(caplog):
+    """When LINE returns 200 but displayName is empty, log warning and leave name unset."""
+    import logging
+    respx.get("https://api.line.me/v2/bot/info").mock(
+        return_value=Response(200, json={"displayName": "", "userId": "Ubot"})
+    )
+    adapter = _adapter(require_mention=True, bot_display_name="")
+    with caplog.at_level(logging.WARNING, logger="gateway.platforms.line"):
+        await adapter._fetch_bot_info()
+    assert adapter._bot_display_name == ""
+    assert any("empty displayName" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_fetch_bot_info_http_failure_logs_warning(caplog):
     """LINE API failure is non-fatal — display name stays empty, warning logged."""
     import logging

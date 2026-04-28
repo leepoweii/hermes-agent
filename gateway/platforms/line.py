@@ -13,6 +13,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -460,7 +461,14 @@ class LineAdapter(BasePlatformAdapter):
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                self._bot_display_name = data.get("displayName", "")
+                name = data.get("displayName") or ""
+                if not name:
+                    logger.warning(
+                        "LINE /v2/bot/info returned empty displayName — set "
+                        "LINE_BOT_DISPLAY_NAME manually for group mention gating to work."
+                    )
+                    return
+                self._bot_display_name = name
                 logger.info("LINE bot display name resolved: %r", self._bot_display_name)
         except Exception:
             logger.warning(
@@ -746,20 +754,34 @@ class LineAdapter(BasePlatformAdapter):
 
         # Group mention gate — only respond when @-mentioned in group/room chats.
         # DMs (src_type == "user") are never gated.
+        # Note: substring match on text (LINE delivers structured mention metadata
+        # in event.message.mention.mentionees[]; matching that would be more robust
+        # but requires a richer event-shape contract — substring is good enough for v1).
         src_type = source.get("type")
         if src_type in ("group", "room") and self._cfg.require_mention:
-            trigger = (
-                f"@{self._bot_display_name}" if self._bot_display_name else None
-            )
-            if trigger and trigger not in text:
+            if not self._bot_display_name:
+                # Fail-closed: gate is configured but bot name unresolved
+                # (auto-fetch failed and no manual override). Block all
+                # group/room messages so a misconfigured deployment doesn't
+                # silently respond to everyone — operator must set
+                # LINE_BOT_DISPLAY_NAME or fix the access token.
+                logger.warning(
+                    "line: require_mention=True but bot_display_name is empty — dropping group/room message"
+                )
+                self._test_idle_event.set()
+                return
+            trigger = f"@{self._bot_display_name}"
+            if trigger not in text:
                 logger.info(
                     "line: group message not addressed to bot — silent drop (trigger=%r)",
                     trigger,
                 )
                 self._test_idle_event.set()
                 return
-            if trigger:
-                text = text.replace(trigger, "").strip()
+            # Strip every occurrence of the mention; collapse runs of whitespace
+            # left behind so the LLM sees a clean question.
+            text = re.sub(re.escape(trigger), "", text)
+            text = re.sub(r"\s+", " ", text).strip()
 
         # Show typing indicator in 1-on-1 chats (LINE limitation: groups don't support it).
         # Best-effort, fire-and-forget.

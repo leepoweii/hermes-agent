@@ -341,3 +341,49 @@ async def test_dm_not_gated_even_with_require_mention(make_line_adapter):
     await adapter.dispatch_event(dm_event)
     await adapter.wait_idle()
     assert route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_group_require_mention_with_empty_bot_name_drops_all(make_line_adapter):
+    """Fail-closed: require_mention=True + empty bot_display_name drops everything in groups.
+
+    Scenario: _fetch_bot_info failed and operator forgot to set LINE_BOT_DISPLAY_NAME.
+    Better to silently drop than to silently respond to the entire group.
+    """
+    route = respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    adapter = make_line_adapter(
+        allowed_groups=["C1"],
+        require_mention=True,
+        bot_display_name="",  # auto-fetch failed, no manual override
+    )
+    await adapter.dispatch_event(_group_msg_event(text="hello"))
+    await adapter.wait_idle()
+    assert not route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_group_mention_strips_trailing_and_collapses_whitespace(make_line_adapter):
+    """Mention token is stripped from any position; runs of whitespace collapse to single space."""
+    respx.post("https://api.line.me/v2/bot/message/reply").mock(
+        return_value=Response(200, json={})
+    )
+    received: list[str] = []
+
+    adapter = make_line_adapter(
+        allowed_groups=["C1"],
+        require_mention=True,
+        bot_display_name="小茉",
+    )
+
+    async def capture_llm(text, source, event=None):
+        received.append(text)
+        return "ok"
+
+    adapter._llm_call = capture_llm
+    await adapter.dispatch_event(_group_msg_event(text="幫我查一下 @小茉 謝謝 @小茉"))
+    await adapter.wait_idle()
+    assert received == ["幫我查一下 謝謝"]

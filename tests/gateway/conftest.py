@@ -279,7 +279,7 @@ async def line_adapter_with_slow_llm():
 
 
 @_pytest_asyncio_line.fixture
-def make_line_adapter():
+async def make_line_adapter():
     """Factory fixture for building a LineAdapter with custom config.
 
     Usage::
@@ -311,9 +311,5 @@ def make_line_adapter():
 
     yield _factory
 
-    async def _cleanup():
-        for a in adapters:
-            await a.disconnect()
-
-    import asyncio as _asyncio
-    _asyncio.get_event_loop().run_until_complete(_cleanup())
+    for a in adapters:
+        await a.disconnect()
