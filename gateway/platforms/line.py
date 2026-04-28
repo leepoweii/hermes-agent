@@ -404,10 +404,10 @@ class LineAdapter(BasePlatformAdapter):
             task.add_done_callback(self._background_tasks.discard)
         return web.Response(status=200, text="ok")
 
-    async def connect(self, app: Optional[web.Application] = None) -> bool:
-        # HTTP route registration: if the gateway runner gives us a shared
-        # aiohttp app we register on it. Otherwise we own the listener
-        # ourselves (mirrors WebhookAdapter's standalone-server pattern).
+    async def connect(self, app: Optional[web.Application] = None) -> bool:  # type: ignore[override]
+        # Optional `app` extends the abstract signature so the gateway runner
+        # can inject its shared aiohttp.web.Application (mirrors WebhookAdapter).
+        # Called with no args by GatewayRunner, so the override is safe.
         if app is None:
             app = web.Application()
             self.register_routes(app)
@@ -443,7 +443,7 @@ class LineAdapter(BasePlatformAdapter):
             finally:
                 self._runner = None
 
-    async def send_typing(self, chat_id: str) -> None:
+    async def send_typing(self, chat_id: str, metadata: Optional[dict[str, Any]] = None) -> None:
         """Send typing indicator. LINE only supports this for 1-on-1 chats (source type 'user')."""
         if chat_id.startswith("U"):
             await self._reply.show_loading(chat_id, seconds=30)
@@ -480,7 +480,7 @@ class LineAdapter(BasePlatformAdapter):
             }
         ]
         if caption:
-            messages.append({"type": "text", "text": caption})
+            messages.extend(self._chunk_text(caption))
 
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -528,7 +528,10 @@ class LineAdapter(BasePlatformAdapter):
 
         The 5-message cap matches LINE's per-call limit for both Reply and Push APIs.
         Responses longer than 25,000 chars are silently truncated at 5 segments.
+        Empty text returns a single placeholder so LINE never receives an empty messages array.
         """
+        if not text:
+            return [{"type": "text", "text": "(no response)"}]
         chunks = [
             text[i:i + self.MAX_MESSAGE_LENGTH]
             for i in range(0, len(text), self.MAX_MESSAGE_LENGTH)

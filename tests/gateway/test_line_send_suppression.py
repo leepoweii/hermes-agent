@@ -75,3 +75,39 @@ async def test_send_handles_none_content(line_adapter_with_fast_llm):
     # Defensive: don't crash on empty/None payloads.
     result = await line_adapter_with_fast_llm.send(chat_id="U1", content="")
     assert result.success is False
+
+
+# ---- _chunk_text unit tests ----
+
+def test_chunk_text_short_returns_single_segment(line_adapter_with_fast_llm):
+    segs = line_adapter_with_fast_llm._chunk_text("hello")
+    assert len(segs) == 1
+    assert segs[0] == {"type": "text", "text": "hello"}
+
+
+def test_chunk_text_empty_returns_placeholder(line_adapter_with_fast_llm):
+    segs = line_adapter_with_fast_llm._chunk_text("")
+    assert len(segs) == 1
+    assert segs[0]["type"] == "text"
+    assert segs[0]["text"]  # must be non-empty so LINE doesn't reject the payload
+
+
+def test_chunk_text_exactly_max_length(line_adapter_with_fast_llm):
+    text = "a" * 5000
+    segs = line_adapter_with_fast_llm._chunk_text(text)
+    assert len(segs) == 1
+    assert segs[0]["text"] == text
+
+
+def test_chunk_text_splits_at_max_length(line_adapter_with_fast_llm):
+    text = "a" * 5001
+    segs = line_adapter_with_fast_llm._chunk_text(text)
+    assert len(segs) == 2
+    assert segs[0]["text"] == "a" * 5000
+    assert segs[1]["text"] == "a"
+
+
+def test_chunk_text_caps_at_five_segments(line_adapter_with_fast_llm):
+    text = "a" * (5000 * 6)  # would be 6 segments without cap
+    segs = line_adapter_with_fast_llm._chunk_text(text)
+    assert len(segs) == 5
