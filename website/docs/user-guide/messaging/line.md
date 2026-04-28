@@ -68,7 +68,7 @@ There is no UI in the LINE Developers Console to list group IDs. The adapter log
 
 - Replies use the **LINE Reply API** (free, 60-second token window).
 - If an LLM response takes longer than ~50 seconds, the bot sends a Quick Reply button (`📋 Show response`, overridable via `LINE_BUTTON_LABEL`). When any user in the chat taps it, the cached answer is delivered using a fresh reply token from the postback event.
-- **No Push API is used** — there is no per-message cost.
+- **Standard replies use the LINE Reply API** (free). Push API is used for image sends and tool-initiated `send_message` calls — these consume message credits on paid plans.
 
 ## Group / room behaviour
 

@@ -27,3 +27,22 @@ def test_line_in_cron_platform_map():
         "'line' key missing from cron scheduler platform_map — "
         "cronjob(deliver='line') will silently fail"
     )
+
+
+def test_line_in_cron_known_delivery_platforms():
+    """'line' must be in _KNOWN_DELIVERY_PLATFORMS or bare deliver='line' is silently dropped."""
+    from cron.scheduler import _KNOWN_DELIVERY_PLATFORMS
+    assert "line" in _KNOWN_DELIVERY_PLATFORMS, (
+        "'line' missing from _KNOWN_DELIVERY_PLATFORMS — "
+        "cronjob(deliver='line') using a home channel will produce no delivery"
+    )
+
+
+def test_line_in_cron_home_target_env_vars():
+    """LINE_HOME_CHANNEL must be registered so hermes setup-configured home channels work."""
+    from cron.scheduler import _HOME_TARGET_ENV_VARS
+    assert "line" in _HOME_TARGET_ENV_VARS, (
+        "'line' missing from _HOME_TARGET_ENV_VARS — "
+        "LINE_HOME_CHANNEL is unreachable for cron home-channel delivery"
+    )
+    assert _HOME_TARGET_ENV_VARS["line"] == "LINE_HOME_CHANNEL"
