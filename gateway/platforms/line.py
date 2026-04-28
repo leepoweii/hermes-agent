@@ -620,8 +620,6 @@ class LineAdapter(BasePlatformAdapter):
 
     async def dispatch_event(self, event: dict[str, Any]) -> None:
         self._ensure_test_events()
-        assert self._test_idle_event is not None
-        assert self._test_button_sent_event is not None
         self._test_idle_event.clear()
         self._test_button_sent_event.clear()
         cfg = {
@@ -880,10 +878,8 @@ class LineAdapter(BasePlatformAdapter):
 
     async def wait_idle(self) -> None:
         self._ensure_test_events()
-        assert self._test_idle_event is not None
-        await self._test_idle_event.wait()
+        await self._test_idle_event.wait()  # type: ignore[union-attr]
 
     async def wait_button_sent(self) -> None:
         self._ensure_test_events()
-        assert self._test_button_sent_event is not None
-        await self._test_button_sent_event.wait()
+        await self._test_button_sent_event.wait()  # type: ignore[union-attr]
