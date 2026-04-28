@@ -16,7 +16,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable
 
 import httpx
 from aiohttp import web
@@ -196,7 +196,7 @@ class RequestCache:
         self._entries[rid] = CacheEntry(state=State.PENDING)
         return rid
 
-    def get(self, request_id: str) -> Optional[CacheEntry]:
+    def get(self, request_id: str) -> CacheEntry | None:
         return self._entries.get(request_id)
 
     def set_ready(self, request_id: str, payload: Any) -> None:
@@ -375,9 +375,9 @@ class LineAdapter(BasePlatformAdapter):
         self._llm_call: Callable[..., Awaitable[str]] = self._real_llm_call
         # Note: _background_tasks already initialized by BasePlatformAdapter.__init__.
         # Test sync events — created lazily on first dispatch (needs running loop).
-        self._test_button_sent_event: Optional[asyncio.Event] = None
-        self._test_idle_event: Optional[asyncio.Event] = None
-        self._runner: Optional[web.AppRunner] = None
+        self._test_button_sent_event: asyncio.Event | None = None
+        self._test_idle_event: asyncio.Event | None = None
+        self._runner: web.AppRunner | None = None
 
     def _ensure_test_events(self) -> None:
         if self._test_idle_event is None:
@@ -430,7 +430,7 @@ class LineAdapter(BasePlatformAdapter):
             task.add_done_callback(_log_exc)
         return web.Response(status=200, text="ok")
 
-    async def connect(self, app: Optional[web.Application] = None) -> bool:  # type: ignore[override]
+    async def connect(self, app: web.Application | None = None) -> bool:  # type: ignore[override]
         # Optional `app` extends the abstract signature so the gateway runner
         # can inject its shared aiohttp.web.Application (mirrors WebhookAdapter).
         # Called with no args by GatewayRunner, so the override is safe.
@@ -469,7 +469,7 @@ class LineAdapter(BasePlatformAdapter):
             finally:
                 self._runner = None
 
-    async def send_typing(self, chat_id: str, metadata: Optional[dict[str, Any]] = None) -> None:
+    async def send_typing(self, chat_id: str, metadata: dict[str, Any] | None = None) -> None:
         """Send typing indicator. LINE only supports this for 1-on-1 chats (source type 'user')."""
         if chat_id.startswith("U"):
             await self._reply.show_loading(chat_id, seconds=30)
@@ -478,9 +478,9 @@ class LineAdapter(BasePlatformAdapter):
         self,
         chat_id: str,
         image_url: str,
-        caption: Optional[str] = None,
-        reply_to: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        caption: str | None = None,
+        reply_to: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """Send an image via LINE Push API.
 
@@ -528,8 +528,8 @@ class LineAdapter(BasePlatformAdapter):
         self,
         chat_id: str,
         image_path: str,
-        caption: Optional[str] = None,
-        reply_to: Optional[str] = None,
+        caption: str | None = None,
+        reply_to: str | None = None,
         **kwargs: Any,
     ) -> SendResult:
         """Not supported — LINE requires publicly accessible HTTPS image URLs.
@@ -599,8 +599,8 @@ class LineAdapter(BasePlatformAdapter):
         self,
         chat_id: str,
         content: str,
-        reply_to: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        reply_to: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """Suppress incidental base-class send() calls (compaction, approval prompts, etc.).
 
@@ -847,7 +847,7 @@ class LineAdapter(BasePlatformAdapter):
         self,
         text: str,
         source: dict[str, Any],
-        event: Optional[dict[str, Any]] = None,
+        event: dict[str, Any] | None = None,
     ) -> str:
         """Production LLM path.
 
