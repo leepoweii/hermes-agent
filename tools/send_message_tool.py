@@ -1598,9 +1598,8 @@ async def _send_line(pconfig, chat_id, message):
     if not token:
         return _error("LINE: LINE_CHANNEL_ACCESS_TOKEN not configured.")
 
-    # Split at LINE's 5000-char limit
-    chunks = [message[i:i + 5000] for i in range(0, len(message), 5000)][:5]
-    messages = [{"type": "text", "text": chunk} for chunk in chunks]
+    from gateway.platforms.line import LineAdapter as _LineAdapter  # noqa: PLC0415
+    messages = _LineAdapter._chunk_text(message)
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:

@@ -541,7 +541,8 @@ class LineAdapter(BasePlatformAdapter):
             error="LINE adapter does not support local file upload — HTTPS URL required",
         )
 
-    def _chunk_text(self, text: str) -> list[dict[str, Any]]:
+    @staticmethod
+    def _chunk_text(text: str) -> list[dict[str, Any]]:
         """Split text into LINE message segment dicts (max 5000 chars, max 5 per call).
 
         The 5-message cap matches LINE's per-call limit for both Reply and Push APIs.
@@ -550,10 +551,8 @@ class LineAdapter(BasePlatformAdapter):
         """
         if not text:
             return [{"type": "text", "text": "(no response)"}]
-        chunks = [
-            text[i:i + self.MAX_MESSAGE_LENGTH]
-            for i in range(0, len(text), self.MAX_MESSAGE_LENGTH)
-        ][:5]
+        max_len = LineAdapter.MAX_MESSAGE_LENGTH
+        chunks = [text[i:i + max_len] for i in range(0, len(text), max_len)][:5]
         return [{"type": "text", "text": chunk} for chunk in chunks]
 
     async def _push_text(self, chat_id: str, text: str) -> SendResult:
@@ -652,10 +651,16 @@ class LineAdapter(BasePlatformAdapter):
             return
 
         if event.get("type") == "message":
+            # _handle_message starts async tasks; _test_idle_event is set by
+            # the watcher's finally (or by early-return paths in _handle_message).
             await self._handle_message(event)
         elif event.get("type") == "postback":
+            # _handle_postback is fully awaited — set the event when it completes.
             await self._handle_postback(event)
-        # Other event types (follow, join, leave, etc.) are not handled.
+            self._test_idle_event.set()
+        else:
+            # Unhandled event types (follow, join, leave, beacon, etc.).
+            self._test_idle_event.set()
 
     # ---- Message handler ----
 
@@ -663,6 +668,7 @@ class LineAdapter(BasePlatformAdapter):
         msg = event.get("message", {})
         if msg.get("type") != "text":
             logger.info("line: ignoring non-text message type=%s", msg.get("type"))
+            self._test_idle_event.set()
             return
         text = msg.get("text", "")
         source = event.get("source", {})
@@ -672,6 +678,7 @@ class LineAdapter(BasePlatformAdapter):
                 "line: dropping message event without replyToken: source=%s",
                 source,
             )
+            self._test_idle_event.set()
             return
         logger.info(
             "line: received message src_type=%s user=%s text=%r",

@@ -76,3 +76,36 @@ async def test_health_endpoint_returns_ok(aiohttp_client, app):
     assert resp.status == 200
     data = await resp.json()
     assert data == {"status": "ok", "platform": "line"}
+
+
+@pytest.mark.asyncio
+async def test_duplicate_webhook_event_id_is_dropped(aiohttp_client, line_adapter, app):
+    """Second delivery of the same webhookEventId must be silently deduplicated."""
+    client = await aiohttp_client(app)
+    body = json.dumps({
+        "events": [{
+            "type": "message",
+            "webhookEventId": "wh-evt-001",
+            "replyToken": "rt",
+            "source": {"type": "user", "userId": "U1"},
+            "timestamp": 1,
+            "message": {"id": "m1", "type": "text", "text": "hello"},
+        }],
+        "destination": "U1",
+    }).encode()
+    sig = _sign("s", body)
+    headers = {"X-Line-Signature": sig}
+
+    dispatched: list[dict] = []
+    original = line_adapter.dispatch_event
+
+    async def _counting_dispatch(event):
+        dispatched.append(event)
+        await original(event)
+
+    line_adapter.dispatch_event = _counting_dispatch
+
+    await client.post("/line/webhook", data=body, headers=headers)
+    await client.post("/line/webhook", data=body, headers=headers)
+
+    assert len(dispatched) == 1, "duplicate webhookEventId must be dropped on second delivery"
