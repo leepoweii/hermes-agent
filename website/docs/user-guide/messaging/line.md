@@ -26,9 +26,9 @@ Choose **LINE** when prompted. You'll be asked for:
 
 - **Channel access token** — LINE Developers Console → your channel → Messaging API → Channel access token (long-lived).
 - **Channel secret** — Same page → Basic settings → Channel secret.
-- **Allowed users (CSV)** — LINE user IDs in 1-on-1 chats that may message the bot. Find your own ID in Basic settings → "Your user ID".
-- **Allowed groups (CSV)** — LINE group IDs (start with `C`). See "Discovering group/room IDs" below.
-- **Allowed rooms (CSV)** — LINE room IDs (start with `R`).
+- **Allowed users (comma-separated)** — LINE user IDs in 1-on-1 chats that may message the bot. Find your own ID in Basic settings → "Your user ID".
+- **Allowed groups (comma-separated)** — LINE group IDs (start with `C`). See "Discovering group/room IDs" below.
+- **Allowed rooms (comma-separated)** — LINE room IDs (start with `R`).
 
 > **Important:** All three allowlists are independent and **default-deny**. An empty list = **no access** for that source type (1-on-1 / group / room) — messages are silently dropped. There is no "leave empty for open access" mode; to allow every sender on a source type during debugging, set `LINE_ALLOW_ALL_USERS=true` in `~/.hermes/.env` (debug only — bypasses all three allowlists).
 
@@ -106,6 +106,8 @@ LINE_FREE_RESPONSE_GROUPS=Cccc      # Cccc bypasses the mention gate
 ```
 
 > **Note:** Free-response IDs **must still appear** in `LINE_ALLOWED_GROUPS` / `LINE_ALLOWED_ROOMS`. The free-response setting only bypasses the mention check, not the allowlist (the allowlist is the trust boundary).
+>
+> **Note:** Inside a free-response group/room the `@<bot>` mention strip does **not** run (the gate is bypassed entirely). If users still type `@<bot>` out of habit, the trigger string is forwarded to the LLM verbatim. LLMs handle this gracefully but it's worth knowing.
 
 Mirrors Telegram's `TELEGRAM_FREE_RESPONSE_CHATS`. The split into separate `_GROUPS` / `_ROOMS` env vars (vs Telegram's single `_CHATS`) follows LINE's source model: groups (`Cxxx…`) and rooms (`Rxxx…`) are distinct ID namespaces with different semantics — groups are persistent named chats, rooms are ad-hoc multi-user chats spawned from 1:1.
 
@@ -128,10 +130,39 @@ All user-facing strings sent by the bot can be overridden via environment variab
 
 ## Troubleshooting
 
+### "Why isn't my bot responding?" decision tree
+
+The adapter has multiple silent-drop paths by design (security, cost control, mention gating). When debugging, work through these checks in order — they mirror the order events flow through the adapter:
+
+1. **Did the webhook even arrive?**
+   - Check `docker logs <container> | grep "line: received\|line.drop\|invalid signature"`
+   - No log entry → tunnel/network problem (cloudflared down, LINE Console webhook URL wrong, firewall)
+   - `401 invalid signature` → `LINE_CHANNEL_SECRET` mismatch with the LINE Console value
+2. **Was the source allowlisted?**
+   - `line.drop unauthorised src_type=group group=Cxxx…` → add `Cxxx…` to `LINE_ALLOWED_GROUPS` and restart
+   - DM dropped → add user ID to `LINE_ALLOWED_USERS`
+3. **Is this a non-text message?**
+   - `line: ignoring non-text message type=sticker` → expected; image/sticker/file inbound is not yet supported
+4. **Mention gate (group/room only, when `LINE_REQUIRE_MENTION=true`)**
+   - `require_mention=True but bot_display_name is empty` → `_fetch_bot_info` failed; set `LINE_BOT_DISPLAY_NAME` manually or check the access token
+   - `group message not addressed to bot — silent drop (trigger='@…')` → user didn't include `@<bot>`; either tell them to mention, add the group to `LINE_FREE_RESPONSE_GROUPS`, or disable `LINE_REQUIRE_MENTION`
+   - `free_response_groups contains IDs not in LINE_ALLOWED_GROUPS` (startup warning) → add the ID to the allowlist as well
+5. **LLM finished but user got nothing**
+   - `button delivery failed for request_id=… (token_prefix=…)` → reply token expired before the slow-LLM Quick Reply could send (LINE rate-limit or network blip); the answer is cached but can't be delivered
+   - `cache entry missing or wrong state for request_id=…` → entry was pruned by TTL or the gateway restarted mid-LLM
+6. **Approval-gated tool hangs**
+   - Sessions silently hang on dangerous-command approval prompts (Reply API can't deliver the prompt)
+   - Pre-approve with `/approve always` in a LINE conversation, or avoid tools that trigger gates
+7. **Process restarted between dedup-mark and dispatch**
+   - Rare; symptom is one missing reply on container restart (at-most-once delivery trade-off, documented in code)
+
+### Symptom table
+
 | Symptom | Likely cause |
 |---|---|
 | Webhook verification fails on LINE Console | Wrong URL, or HMAC mismatch (channel secret typo). |
 | Bot never replies in a group | Group ID not in `LINE_ALLOWED_GROUPS`; check `docker logs <container> \| grep line.drop`. |
+| Bot never replies in a free-response group | Free-response group ID missing from `LINE_ALLOWED_GROUPS` (allowlist runs first). Check startup log for the warning. |
 | Reply token expired error | LLM exceeded 60s and the postback flow also failed; check that Quick Reply payload includes a valid `request_id`. |
 | Bot replies "Response expired — please ask again." | Cache TTL (1 hour) elapsed, or container restarted while answer was PENDING. |
 | Tool calls never complete (session hangs) | Approval prompts can't reach LINE users. Pre-approve trusted commands with `/approve always`. |

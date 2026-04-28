@@ -77,6 +77,16 @@ SHOW_RESPONSE_BUTTON_LABEL = (
 # Spec: https://developers.line.biz/en/reference/messaging-api/#signature-validation
 
 
+def _scrub_token(text: str) -> str:
+    """Best-effort scrubbing of Bearer tokens before they hit logs / SendResult.
+
+    httpx exception strings don't currently include Authorization headers, but
+    that contract isn't documented and could change. Defensive guard: replace
+    any 'Bearer <token>' substring with a marker.
+    """
+    return re.sub(r"Bearer\s+\S+", "Bearer <redacted>", text)
+
+
 def verify_signature(body: bytes, signature: str, channel_secret: str) -> bool:
     """Constant-time compare LINE's X-Line-Signature header against an HMAC-SHA256
     of the raw body using the channel secret.
@@ -595,8 +605,8 @@ class LineAdapter(BasePlatformAdapter):
                 resp.raise_for_status()
             return SendResult(success=True)
         except Exception as exc:
-            logger.warning("line: send_image push failed chat_id=%s: %s", chat_id, exc)
-            return SendResult(success=False, error=str(exc))
+            logger.warning("line: send_image push failed chat_id=%s: %s", chat_id, _scrub_token(str(exc)))
+            return SendResult(success=False, error=_scrub_token(str(exc)))
 
     async def send_image_file(
         self,
@@ -666,8 +676,8 @@ class LineAdapter(BasePlatformAdapter):
                 resp.raise_for_status()
             return SendResult(success=True)
         except Exception as exc:
-            logger.warning("line: push_text failed chat_id=%s: %s", chat_id, exc)
-            return SendResult(success=False, error=str(exc))
+            logger.warning("line: push_text failed chat_id=%s: %s", chat_id, _scrub_token(str(exc)))
+            return SendResult(success=False, error=_scrub_token(str(exc)))
 
     async def send(
         self,

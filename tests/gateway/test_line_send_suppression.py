@@ -126,3 +126,12 @@ def test_chunk_text_appends_truncated_suffix_when_over_five_segments(line_adapte
     segs = line_adapter_with_fast_llm._chunk_text(text)
     assert len(segs) == 5
     assert segs[-1]["text"].endswith("\n… (truncated)")
+
+
+def test_scrub_token_redacts_bearer():
+    """Defensive: never let a Bearer token leak into log lines or SendResult.error."""
+    from gateway.platforms.line import _scrub_token
+    sample = "401 Unauthorized: GET https://api.line.me/v2/bot/info Authorization: Bearer abc123secret"
+    scrubbed = _scrub_token(sample)
+    assert "abc123secret" not in scrubbed
+    assert "Bearer <redacted>" in scrubbed
