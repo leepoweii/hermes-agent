@@ -222,6 +222,25 @@ For cloud sandbox backends, persistence is filesystem-oriented. `TERMINAL_LIFETI
 | `TELEGRAM_REPLY_TO_MODE` | Reply-reference behavior: `off`, `first` (default), or `all`. Matches the Discord pattern. |
 | `TELEGRAM_IGNORED_THREADS` | Comma-separated Telegram forum topic/thread IDs where the bot never responds |
 | `TELEGRAM_PROXY` | Proxy URL for Telegram connections — overrides `HTTPS_PROXY`. Supports `http://`, `https://`, `socks5://` |
+| `LINE_CHANNEL_ACCESS_TOKEN` | LINE Messaging API channel access token (long-lived, from Developers Console) |
+| `LINE_CHANNEL_SECRET` | LINE channel secret used to verify webhook signatures (HMAC-SHA256) |
+| `LINE_ALLOWED_USERS` | Comma-separated `U`-prefixed LINE user IDs allowed to chat with the bot via DM |
+| `LINE_ALLOWED_GROUPS` | Comma-separated `C`-prefixed LINE group IDs allowed to use the bot |
+| `LINE_ALLOWED_ROOMS` | Comma-separated `R`-prefixed LINE room IDs allowed to use the bot |
+| `LINE_ALLOW_ALL_USERS` | Bypass all source allowlists — users, groups, AND rooms (NOT recommended for production; default: `false`) |
+| `LINE_HOME_CHANNEL` | Default LINE chat ID for cron delivery and notifications |
+| `LINE_HOME_CHANNEL_NAME` | Display name for the LINE home channel (default: `Home`) |
+| `LINE_WEBHOOK_PORT` | Local listen port for the LINE webhook server (default: `8645`) |
+| `LINE_REQUIRE_MENTION` | Require @mention in groups/rooms before responding (default: `false`) |
+| `LINE_BOT_DISPLAY_NAME` | Manual override for the bot's display name (auto-fetched from `/v2/bot/info` if empty) |
+| `LINE_FREE_RESPONSE_GROUPS` | Comma-separated group IDs that bypass the mention gate (must also be in `LINE_ALLOWED_GROUPS`) |
+| `LINE_FREE_RESPONSE_ROOMS` | Comma-separated room IDs that bypass the mention gate (must also be in `LINE_ALLOWED_ROOMS`) |
+| `LINE_SLOW_RESPONSE_THRESHOLD` | Seconds before showing the Quick Reply postback button when the LLM is slow (default: `45`) |
+| `LINE_CACHE_TTL` | Seconds to cache the LLM response for postback retrieval (default: `3600`) |
+| `LINE_PENDING_TEXT` | Text shown alongside the Quick Reply button while the response is pending |
+| `LINE_DELIVERED_TEXT` | Reply text when a user taps the button after the response was already delivered |
+| `LINE_EXPIRED_TEXT` | Reply text when the cached response has expired |
+| `LINE_BUTTON_LABEL` | Label on the Quick Reply postback button (default: `📋 Show response`) |
 | `DISCORD_BOT_TOKEN` | Discord bot token |
 | `DISCORD_ALLOWED_USERS` | Comma-separated Discord user IDs allowed to use the bot |
 | `DISCORD_ALLOWED_ROLES` | Comma-separated Discord role IDs allowed to use the bot (OR with `DISCORD_ALLOWED_USERS`). Auto-enables the Members intent. Useful when moderation teams churn — role grants propagate automatically. |
