@@ -1,0 +1,69 @@
+"""Tests for LINE webhook signature verification and payload parsing."""
+import json
+
+from gateway.platforms.line import verify_signature, parse_events
+from tests.gateway.conftest import line_sign as _sign
+
+
+def test_verify_signature_accepts_valid():
+    secret = "test_secret"
+    body = b'{"events":[]}'
+    sig = _sign(secret, body)
+    assert verify_signature(body, sig, secret) is True
+
+
+def test_verify_signature_rejects_invalid():
+    body = b'{"events":[]}'
+    bad_sig = "not-the-real-signature"
+    assert verify_signature(body, bad_sig, "test_secret") is False
+
+
+def test_verify_signature_rejects_empty():
+    assert verify_signature(b"", "", "test_secret") is False
+
+
+def test_verify_signature_rejects_when_secret_empty():
+    """Outbound-only mode (LINE_CHANNEL_SECRET unset): every inbound webhook
+    must be rejected so the gateway can't accept un-verifiable traffic.
+    Codex review #5 P3."""
+    assert verify_signature(b'{"events": []}', "any-sig", "") is False
+
+
+def test_parse_events_returns_empty_for_no_events():
+    body = json.dumps({"destination": "U1", "events": []}).encode()
+    assert parse_events(body) == []
+
+
+def test_parse_events_extracts_message_event():
+    payload = {
+        "destination": "U1",
+        "events": [
+            {
+                "type": "message",
+                "replyToken": "rt-1",
+                "source": {"type": "user", "userId": "Uabc"},
+                "timestamp": 1234567890,
+                "message": {"id": "m1", "type": "text", "text": "hi"},
+            }
+        ],
+    }
+    body = json.dumps(payload).encode()
+    events = parse_events(body)
+    assert len(events) == 1
+    assert events[0]["type"] == "message"
+    assert events[0]["source"]["userId"] == "Uabc"
+
+
+def test_verify_signature_accepts_valid_empty_body():
+    secret = "test_secret"
+    body = b""
+    sig = _sign(secret, body)
+    assert verify_signature(body, sig, secret) is True
+
+
+def test_parse_events_returns_empty_for_malformed_json():
+    assert parse_events(b"not json") == []
+
+
+def test_parse_events_returns_empty_for_non_dict_payload():
+    assert parse_events(b"[1,2,3]") == []
