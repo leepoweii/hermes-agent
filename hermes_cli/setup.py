@@ -2101,6 +2101,12 @@ def _setup_weixin():
     _gateway_setup_weixin()
 
 
+def _setup_line():
+    """Configure LINE via gateway setup."""
+    from hermes_cli.gateway import _setup_line as _gateway_setup_line
+    _gateway_setup_line()
+
+
 def _setup_signal():
     """Configure Signal via gateway setup."""
     from hermes_cli.gateway import _setup_signal as _gateway_setup_signal
@@ -2271,6 +2277,7 @@ def _setup_webhooks():
 # Platform registry for the gateway checklist
 _GATEWAY_PLATFORMS = [
     ("Telegram", "TELEGRAM_BOT_TOKEN", _setup_telegram),
+    ("LINE", "LINE_CHANNEL_ACCESS_TOKEN", _setup_line),
     ("Discord", "DISCORD_BOT_TOKEN", _setup_discord),
     ("Slack", "SLACK_BOT_TOKEN", _setup_slack),
     ("Signal", "SIGNAL_HTTP_URL", _setup_signal),

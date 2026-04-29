@@ -128,7 +128,7 @@ SEND_MESSAGE_SCHEMA = {
             },
             "target": {
                 "type": "string",
-                "description": "Delivery target. Format: 'platform' (uses home channel), 'platform:#channel-name', 'platform:chat_id', or 'platform:chat_id:thread_id' for Telegram topics and Discord threads. Examples: 'telegram', 'telegram:-1001234567890:17585', 'discord:999888777:555444333', 'discord:#bot-home', 'slack:#engineering', 'signal:+155****4567', 'matrix:!roomid:server.org', 'matrix:@user:server.org', 'yuanbao:direct:<account_id>' (DM), 'yuanbao:group:<group_code>' (group chat)"
+                "description": "Delivery target. Format: 'platform' (uses home channel), 'platform:#channel-name', 'platform:chat_id', or 'platform:chat_id:thread_id' for Telegram topics and Discord threads. Examples: 'telegram', 'telegram:-1001234567890:17585', 'discord:999888777:555444333', 'discord:#bot-home', 'slack:#engineering', 'line:U1234567890abcdef', 'signal:+155****4567', 'matrix:!roomid:server.org', 'matrix:@user:server.org', 'yuanbao:direct:<account_id>' (DM), 'yuanbao:group:<group_code>' (group chat)"
             },
             "message": {
                 "type": "string",
@@ -208,6 +208,7 @@ def _handle_send(args):
     platform_map = {
         "telegram": Platform.TELEGRAM,
         "discord": Platform.DISCORD,
+        "line": Platform.LINE,
         "slack": Platform.SLACK,
         "whatsapp": Platform.WHATSAPP,
         "signal": Platform.SIGNAL,
@@ -361,6 +362,12 @@ def _parse_target_ref(platform_name: str, target_ref: str):
     # Matrix room IDs (start with !) and user IDs (start with @) are explicit
     if platform_name == "matrix" and (target_ref.startswith("!") or target_ref.startswith("@")):
         return target_ref, None, True
+    # LINE chat IDs are prefix-distinguished: U=DM, C=group, R=room. Treat
+    # any target starting with one of these prefixes as an explicit chat_id
+    # so `send_message(target="line:U1234...")` bypasses the channel-name
+    # lookup that would otherwise reject it (codex review #6 P1).
+    if platform_name == "line" and target_ref[:1] in ("U", "C", "R"):
+        return target_ref, None, True
     return None, None, False
 
 
@@ -455,6 +462,13 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
     except ImportError:
         _feishu_available = False
 
+    # LINE adapter import is optional (requires httpx + aiohttp — both core deps)
+    try:
+        from gateway.platforms.line import LineAdapter as _LineAdapter
+        _line_available = True
+    except ImportError:
+        _line_available = False
+
     media_files = media_files or []
 
     if platform == Platform.SLACK and message:
@@ -472,6 +486,8 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
     }
     if _feishu_available:
         _MAX_LENGTHS[Platform.FEISHU] = FeishuAdapter.MAX_MESSAGE_LENGTH
+    if _line_available:
+        _MAX_LENGTHS[Platform.LINE] = _LineAdapter.MAX_MESSAGE_LENGTH
 
     # Smart-chunk the message to fit within platform limits.
     # For short messages or platforms without a known limit this is a no-op.
@@ -599,6 +615,8 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
             result = await _send_bluebubbles(pconfig.extra, chat_id, chunk)
         elif platform == Platform.QQBOT:
             result = await _send_qqbot(pconfig, chat_id, chunk)
+        elif platform == Platform.LINE:
+            result = await _send_line(pconfig, chat_id, chunk)
         else:
             result = {"error": f"Direct sending not yet implemented for {platform.value}"}
 
@@ -1473,6 +1491,49 @@ async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=No
         }
     except Exception as e:
         return _error(f"Feishu send failed: {e}")
+
+
+async def _send_line(pconfig, chat_id, message):
+    """Send a message to a LINE user/group via Push API.
+
+    Uses Push API (not Reply API) because send_message/cron runs outside
+    a webhook handler and has no reply token. Push API costs a message
+    credit on LINE's paid plan.
+
+    Requires LINE_CHANNEL_ACCESS_TOKEN in pconfig.token.
+    """
+    try:
+        import httpx
+    except ImportError:
+        return _error("LINE send requires httpx. Run: pip install httpx")
+
+    token = pconfig.token or ""
+    if not token:
+        return _error("LINE: LINE_CHANNEL_ACCESS_TOKEN not configured.")
+
+    # Reuse adapter's media-extracting builder so cron/send_message bodies
+    # with Markdown image URLs render as native LINE image bubbles instead
+    # of raw text (codex review #4 P2). Falls back to plain chunking when
+    # no images are present.
+    from gateway.platforms.line import LINE_PUSH_URL, LineAdapter as _LineAdapter
+    messages = _LineAdapter._build_reply_messages(message)
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                LINE_PUSH_URL,
+                json={"to": chat_id, "messages": messages},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+            )
+            resp.raise_for_status()
+            return {"success": True, "platform": "line", "chat_id": chat_id}
+    except Exception as exc:
+        scrubbed = _sanitize_error_text(str(exc))
+        logger.warning("line: push send failed chat_id=%s: %s", chat_id, scrubbed)
+        return _error(f"LINE push failed: {scrubbed}")
 
 
 def _check_send_message():

@@ -2319,6 +2319,7 @@ class GatewayRunner:
                        "BLUEBUBBLES_ALLOWED_USERS",
                        "QQ_ALLOWED_USERS",
                        "YUANBAO_ALLOWED_USERS",
+                       "LINE_ALLOWED_USERS",
                        "GATEWAY_ALLOWED_USERS")
         )
         _allow_all = os.getenv("GATEWAY_ALLOW_ALL_USERS", "").lower() in ("true", "1", "yes") or any(
@@ -2334,7 +2335,8 @@ class GatewayRunner:
                        "WEIXIN_ALLOW_ALL_USERS",
                        "BLUEBUBBLES_ALLOW_ALL_USERS",
                        "QQ_ALLOW_ALL_USERS",
-                       "YUANBAO_ALLOW_ALL_USERS")
+                       "YUANBAO_ALLOW_ALL_USERS",
+                       "LINE_ALLOW_ALL_USERS")
         )
         if not _any_allowlist and not _allow_all:
             logger.warning(
@@ -3331,6 +3333,22 @@ class GatewayRunner:
                 return None
             return YuanbaoAdapter(config)
 
+        elif platform == Platform.LINE:
+            from gateway.platforms.line import (
+                LineAdapter,
+                LineAdapterConfig,
+                check_line_requirements,
+            )
+            if not check_line_requirements():
+                logger.warning("[LINE] Dependencies not available (httpx/aiohttp missing)")
+                return None
+            try:
+                line_cfg = LineAdapterConfig.from_env()
+            except ValueError as exc:
+                logger.warning("LINE: %s", exc)
+                return None
+            return LineAdapter(line_cfg)
+
         return None
     def _is_user_authorized(self, source: SessionSource) -> bool:
         """
@@ -3349,6 +3367,16 @@ class GatewayRunner:
         # Webhook events are authenticated via HMAC signature validation in
         # the adapter itself — no user allowlist applies.
         if source.platform in (Platform.HOMEASSISTANT, Platform.WEBHOOK):
+            return True
+
+        # LINE: HMAC-verified webhook events for group/room sources have
+        # already been authorized by the adapter's own three-allowlist
+        # check (LINE_ALLOWED_GROUPS / LINE_ALLOWED_ROOMS) before dispatch.
+        # The DM path (chat_type="dm") still flows through LINE_ALLOWED_USERS
+        # below — only group and room sources skip the per-user check, since
+        # LINE groups have no stable per-member allowlist concept and the
+        # group/room id is the meaningful authorization handle.
+        if source.platform == Platform.LINE and source.chat_type in {"group", "room"}:
             return True
 
         user_id = source.user_id
@@ -3373,6 +3401,7 @@ class GatewayRunner:
             Platform.BLUEBUBBLES: "BLUEBUBBLES_ALLOWED_USERS",
             Platform.QQBOT: "QQ_ALLOWED_USERS",
             Platform.YUANBAO: "YUANBAO_ALLOWED_USERS",
+            Platform.LINE: "LINE_ALLOWED_USERS",
         }
         platform_group_env_map = {
             Platform.TELEGRAM: "TELEGRAM_GROUP_ALLOWED_USERS",
@@ -3396,6 +3425,7 @@ class GatewayRunner:
             Platform.BLUEBUBBLES: "BLUEBUBBLES_ALLOW_ALL_USERS",
             Platform.QQBOT: "QQ_ALLOW_ALL_USERS",
             Platform.YUANBAO: "YUANBAO_ALLOW_ALL_USERS",
+            Platform.LINE: "LINE_ALLOW_ALL_USERS",
         }
 
         # Per-platform allow-all flag (e.g., DISCORD_ALLOW_ALL_USERS=true)
@@ -3527,6 +3557,7 @@ class GatewayRunner:
                 Platform.WEIXIN:   "WEIXIN_ALLOWED_USERS",
                 Platform.BLUEBUBBLES: "BLUEBUBBLES_ALLOWED_USERS",
                 Platform.QQBOT:    "QQ_ALLOWED_USERS",
+                Platform.LINE:     "LINE_ALLOWED_USERS",
             }
             if os.getenv(platform_env_map.get(platform, ""), "").strip():
                 return "ignore"
@@ -8274,7 +8305,7 @@ class GatewayRunner:
         Platform.TELEGRAM, Platform.DISCORD, Platform.SLACK, Platform.WHATSAPP,
         Platform.SIGNAL, Platform.MATTERMOST, Platform.MATRIX,
         Platform.HOMEASSISTANT, Platform.EMAIL, Platform.SMS, Platform.DINGTALK,
-        Platform.FEISHU, Platform.WECOM, Platform.WECOM_CALLBACK, Platform.WEIXIN, Platform.BLUEBUBBLES, Platform.QQBOT, Platform.LOCAL,
+        Platform.FEISHU, Platform.WECOM, Platform.WECOM_CALLBACK, Platform.WEIXIN, Platform.BLUEBUBBLES, Platform.QQBOT, Platform.LINE, Platform.LOCAL,
     })
 
     async def _handle_debug_command(self, event: MessageEvent) -> str:

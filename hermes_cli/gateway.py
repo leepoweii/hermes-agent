@@ -2384,6 +2384,35 @@ _PLATFORMS = [
         ],
     },
     {
+        "key": "line",
+        "label": "LINE",
+        "emoji": "💬",
+        "token_var": "LINE_CHANNEL_ACCESS_TOKEN",
+        "setup_instructions": [
+            "1. Create a LINE Official Account: https://www.linebiz.com/jp-en/manual/OfficialAccountManager/registration/",
+            "2. Open https://developers.line.biz/console/ → select your channel",
+            "3. Messaging API tab → Channel access token → Issue (long-lived)",
+            "4. Basic settings tab → Channel secret",
+            "5. Find your LINE user ID: Basic settings → 'Your user ID' (starts with 'U')",
+            "6. Webhook URL will be set later, after the gateway starts (uses LINE_WEBHOOK_PORT, default 8645)",
+        ],
+        "vars": [
+            {"name": "LINE_CHANNEL_ACCESS_TOKEN", "prompt": "Channel access token", "password": True,
+             "help": "Paste the long-lived access token from step 3 above."},
+            {"name": "LINE_CHANNEL_SECRET", "prompt": "Channel secret", "password": True,
+             "help": "Paste the secret from step 4 above."},
+            {"name": "LINE_ALLOWED_USERS", "prompt": "Allowed user IDs (comma-separated)", "password": False,
+             "is_allowlist": True,
+             "help": "Paste your user ID from step 5 above. All three allowlists default-deny — empty list = no access."},
+            {"name": "LINE_ALLOWED_GROUPS", "prompt": "Allowed group IDs (comma-separated, leave empty)", "password": False,
+             "help": "LINE group IDs start with 'C'. Discover by adding the bot to a group, sending a message, then checking 'line.drop' log entries."},
+            {"name": "LINE_ALLOWED_ROOMS", "prompt": "Allowed room IDs (comma-separated, leave empty)", "password": False,
+             "help": "LINE room IDs start with 'R'."},
+            {"name": "LINE_HOME_CHANNEL", "prompt": "Home channel ID (for cron/notifications, or empty to set later with /set-home)", "password": False,
+             "help": "For DMs, this is your user ID. Set later by typing /set-home in chat."},
+        ],
+    },
+    {
         "key": "discord",
         "label": "Discord",
         "emoji": "💬",
@@ -3587,6 +3616,12 @@ def _setup_qqbot():
     print()
     print_success("🐧 QQ Bot configured!")
     print_info(f"  App ID: {credentials['app_id']}")
+
+
+def _setup_line():
+    """Interactive setup for LINE Messaging API."""
+    line_platform = next(p for p in _PLATFORMS if p["key"] == "line")
+    _setup_standard_platform(line_platform)
 
 
 def _setup_signal():

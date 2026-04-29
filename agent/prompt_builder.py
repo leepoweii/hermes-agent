@@ -327,6 +327,14 @@ PLATFORM_HINTS = {
         "attachments, audio as file attachments. You can also include image URLs "
         "in markdown format ![alt](url) and they will be sent as attachments."
     ),
+    "line": (
+        "You are on LINE Messaging. "
+        "LINE does not render Markdown — use plain text only. "
+        "Messages are limited to 5000 characters; split long responses into multiple messages. "
+        "Replies go through the Reply API and are only possible within the current conversation turn. "
+        "Images can be sent via HTTPS URL (send_image); local file upload is not supported. "
+        "Voice and document delivery are not supported."
+    ),
     "slack": (
         "You are in a Slack workspace communicating with your user. "
         "You can send media files natively: include MEDIA:/absolute/path/to/file "

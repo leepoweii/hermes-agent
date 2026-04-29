@@ -67,6 +67,7 @@ class Platform(Enum):
     WEIXIN = "weixin"
     BLUEBUBBLES = "bluebubbles"
     QQBOT = "qqbot"
+    LINE = "line"
     YUANBAO = "yuanbao"
 
 
@@ -879,7 +880,29 @@ def _validate_gateway_config(config: "GatewayConfig") -> None:
 
 def _apply_env_overrides(config: GatewayConfig) -> None:
     """Apply environment variable overrides to config."""
-    
+
+    # LINE (auto-enable on access token alone — channel secret is only
+    # required for the inbound webhook receiver path. Outbound-only
+    # setups (send_message(target="line:U…") and cron home-channel
+    # Push deliveries) work on token + home channel without a secret.
+    # The receiver path refuses inbound webhooks when secret is missing
+    # — signature verification fails — so an unset secret cleanly
+    # disables incoming traffic without disabling outbound.
+    line_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+    if line_token:
+        if Platform.LINE not in config.platforms:
+            config.platforms[Platform.LINE] = PlatformConfig()
+        config.platforms[Platform.LINE].enabled = True
+        config.platforms[Platform.LINE].token = line_token
+
+    line_home = os.getenv("LINE_HOME_CHANNEL")
+    if line_home and Platform.LINE in config.platforms:
+        config.platforms[Platform.LINE].home_channel = HomeChannel(
+            platform=Platform.LINE,
+            chat_id=line_home,
+            name=os.getenv("LINE_HOME_CHANNEL_NAME", "Home"),
+        )
+
     # Telegram
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if telegram_token:

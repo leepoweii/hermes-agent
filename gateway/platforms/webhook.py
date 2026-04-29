@@ -221,6 +221,11 @@ class WebhookAdapter(BasePlatformAdapter):
             "weixin",
             "bluebubbles",
             "qqbot",
+            # LINE intentionally omitted: LineAdapter.send() is a no-op
+            # (suppressed to avoid Push API costs from base session pipeline).
+            # Cross-platform webhook delivery to LINE would silently fail.
+            # Use send_message_tool (deliver: line) which routes through
+            # tools/send_message_tool._send_line() Push API path instead.
         ):
             return await self._deliver_cross_platform(
                 deliver_type, content, delivery
