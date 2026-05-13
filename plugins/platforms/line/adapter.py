@@ -988,11 +988,11 @@ class LineAdapter(BasePlatformAdapter):
 
         if msg_type == "text":
             text = msg.get("text", "") or ""
-            if chat_id and text:
-                self._last_question[chat_id] = text[:160]
             if text.strip() == "/check-pending":
                 await self._handle_check_pending(chat_id, reply_token)
                 return
+            if chat_id and text:
+                self._last_question[chat_id] = text[:160]
         elif msg_type in ("image", "audio", "video", "file"):
             local_path = await self._download_media(message_id, msg_type)
             if local_path:
@@ -1105,12 +1105,11 @@ class LineAdapter(BasePlatformAdapter):
                 logger.warning("LINE: /check-pending reply failed: %s", exc)
             return
 
-        retrievable = [
-            (rid, self._cache.get(rid))
-            for rid in pending_deque
-            if self._cache.get(rid) is not None
-            and self._cache.get(rid).state in (State.READY, State.ERROR)
-        ]
+        retrievable = []
+        for rid in pending_deque:
+            entry = self._cache.get(rid)
+            if entry is not None and entry.state in (State.READY, State.ERROR):
+                retrievable.append((rid, entry))
 
         if not retrievable:
             try:

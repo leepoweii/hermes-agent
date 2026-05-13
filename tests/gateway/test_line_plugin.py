@@ -783,7 +783,7 @@ class TestCheckPending:
         adapter._client.reply.assert_called_once()
         call_messages = adapter._client.reply.call_args.args[1]
         assert call_messages[0]["type"] == "text"
-        assert "template" not in str(call_messages[0])
+        assert "working" in call_messages[0]["text"].lower()
 
     def test_check_pending_sends_button_for_each_ready_answer(self, adapter):
         from collections import deque
