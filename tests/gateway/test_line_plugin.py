@@ -468,6 +468,19 @@ class TestSendRouting:
         assert "**" not in out
         assert "https://x.com" in out
 
+    def test_last_question_stored_on_text_message(self, adapter):
+        """_handle_message_event must update _last_question for postback label use."""
+        event = {
+            "type": "message",
+            "replyToken": "rt",
+            "source": {"type": "user", "userId": "Uchat"},
+            "message": {"type": "text", "id": "m1", "text": "What time is it?"},
+        }
+        adapter.handle_message = AsyncMock()
+        adapter._client.loading = AsyncMock()
+        asyncio.run(adapter._handle_message_event(event))
+        assert adapter._last_question.get("Uchat") == "What time is it?"
+
 
 # ---------------------------------------------------------------------------
 # 8. Register() metadata + plugin entry points

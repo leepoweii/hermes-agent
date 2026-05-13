@@ -988,6 +988,8 @@ class LineAdapter(BasePlatformAdapter):
 
         if msg_type == "text":
             text = msg.get("text", "") or ""
+            if chat_id and text:
+                self._last_question[chat_id] = text[:160]
         elif msg_type in ("image", "audio", "video", "file"):
             local_path = await self._download_media(message_id, msg_type)
             if local_path:
