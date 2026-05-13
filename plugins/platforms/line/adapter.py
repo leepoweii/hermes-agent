@@ -37,6 +37,13 @@ or behind a reverse proxy.
 Reply/Push call; longer responses are smart-chunked at 4500 chars
 (LINE per-bubble limit is 5000) and batched.
 
+**Answer queue + /check-pending.** When a second LLM answer arrives while the
+first postback button is still unclaimed, it is stored in a per-chat deque
+rather than silently dropped. Users can type ``/check-pending`` to get a
+Template Button for each queued answer (intercepted before the LLM, free via
+reply token). The deque is drained by ``interrupt_session_activity`` on
+session stop.
+
 Synthesis credits
 -----------------
 
