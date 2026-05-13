@@ -643,6 +643,27 @@ def _truthy_env(name: str, default: bool = False) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Pending-button queue helpers
+# ---------------------------------------------------------------------------
+
+def _remove_from_pending_queue(
+    pending: Dict[str, "collections.deque"],
+    chat_id: str,
+    request_id: str,
+) -> None:
+    """Remove a specific rid from the per-chat deque; prune the key when empty."""
+    q = pending.get(chat_id)
+    if not q:
+        return
+    try:
+        q.remove(request_id)
+    except ValueError:
+        pass
+    if not q:
+        pending.pop(chat_id, None)
+
+
+# ---------------------------------------------------------------------------
 # Adapter
 # ---------------------------------------------------------------------------
 
@@ -743,9 +764,11 @@ class LineAdapter(BasePlatformAdapter):
         self._media_temp_paths: Set[str] = set()
         self._media_ttl = MEDIA_TOKEN_TTL_SECONDS
 
-        # Pending-button slot per chat — ensures one outstanding postback
-        # button per chat at a time. Postback cache request_id keyed by chat_id.
-        self._pending_buttons: Dict[str, str] = {}
+        # Pending-button queue per chat. Each entry is a deque of request_ids
+        # (oldest first). A new rid is appended when a second LLM answer arrives
+        # before the user taps the first button.
+        self._pending_buttons: Dict[str, collections.deque] = {}
+        self._last_question: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -1034,13 +1057,13 @@ class LineAdapter(BasePlatformAdapter):
             try:
                 await self._client.reply(reply_token, messages)
                 self._cache.mark_delivered(request_id)
-                self._pending_buttons.pop(chat_id, None)
+                _remove_from_pending_queue(self._pending_buttons, chat_id, request_id)
             except Exception as exc:
                 logger.warning("LINE: postback reply failed (%s); falling back to push", exc)
                 try:
                     await self._client.push(chat_id, messages)
                     self._cache.mark_delivered(request_id)
-                    self._pending_buttons.pop(chat_id, None)
+                    _remove_from_pending_queue(self._pending_buttons, chat_id, request_id)
                 except Exception as exc2:
                     logger.error("LINE: postback push fallback failed: %s", exc2)
         elif entry.state is State.ERROR:
@@ -1048,7 +1071,7 @@ class LineAdapter(BasePlatformAdapter):
             try:
                 await self._client.reply(reply_token, [_text_message(text)])
                 self._cache.mark_delivered(request_id)
-                self._pending_buttons.pop(chat_id, None)
+                _remove_from_pending_queue(self._pending_buttons, chat_id, request_id)
             except Exception as exc:
                 logger.warning("LINE: postback ERROR reply failed: %s", exc)
         elif entry.state is State.DELIVERED:
@@ -1103,12 +1126,23 @@ class LineAdapter(BasePlatformAdapter):
         if _is_system_bypass(content):
             return await self._send_text_chunks(chat_id, content, force_push=False)
 
-        # If the chat has a PENDING postback button outstanding, route the
-        # response into the cache for the user to fetch via tap.
-        pending_rid = self._pending_buttons.get(chat_id)
-        if pending_rid:
-            self._cache.set_ready(pending_rid, content)
-            return SendResult(success=True, message_id=pending_rid)
+        # If the chat has a pending postback queue, route the response to it.
+        # Find the oldest PENDING slot; if all slots are READY, open a new one
+        # so the answer isn't lost (user can retrieve via /check-pending).
+        pending_deque = self._pending_buttons.get(chat_id)
+        if pending_deque:
+            for rid in pending_deque:
+                entry = self._cache.get(rid)
+                if entry and entry.state is State.PENDING:
+                    self._cache.set_ready(rid, content)
+                    return SendResult(success=True, message_id=rid)
+            # All slots already READY — queue a new one.
+            new_rid = self._cache.register_ready(
+                chat_id, content,
+                question_preview=self._last_question.get(chat_id, ""),
+            )
+            pending_deque.append(new_rid)
+            return SendResult(success=True, message_id=new_rid)
 
         return await self._send_text_chunks(chat_id, content, force_push=False)
 
@@ -1205,13 +1239,16 @@ class LineAdapter(BasePlatformAdapter):
             # already responded, _consume_reply_token has cleared it.
             if chat_id not in self._reply_tokens:
                 return
-            if chat_id in self._pending_buttons:
+            if self._pending_buttons.get(chat_id):
                 return
-            rid = self._cache.register_pending(chat_id)
-            self._pending_buttons[chat_id] = rid
+            rid = self._cache.register_pending(
+                chat_id,
+                question_preview=self._last_question.get(chat_id, ""),
+            )
+            self._pending_buttons.setdefault(chat_id, collections.deque()).append(rid)
             token, used = self._consume_reply_token(chat_id)
             if not used:
-                self._pending_buttons.pop(chat_id, None)
+                _remove_from_pending_queue(self._pending_buttons, chat_id, rid)
                 return
             msg = build_postback_button_message(
                 self.pending_text, self.button_label, rid
@@ -1221,7 +1258,7 @@ class LineAdapter(BasePlatformAdapter):
                 logger.info("LINE: sent slow-LLM postback button for chat %s (rid=%s)", chat_id, rid)
             except Exception as exc:
                 logger.warning("LINE: postback button send failed: %s", exc)
-                self._pending_buttons.pop(chat_id, None)
+                _remove_from_pending_queue(self._pending_buttons, chat_id, rid)
 
         post_task = asyncio.create_task(_fire_postback())
         try:
@@ -1237,9 +1274,10 @@ class LineAdapter(BasePlatformAdapter):
     async def interrupt_session_activity(self, session_key: str, chat_id: str) -> None:
         """Resolve any orphan PENDING postback so the button doesn't loop."""
         await super().interrupt_session_activity(session_key, chat_id)
-        rid = self._pending_buttons.pop(chat_id, None)
-        if rid:
-            self._cache.set_error(rid, self.interrupted_text)
+        pending_deque = self._pending_buttons.pop(chat_id, None)
+        if pending_deque:
+            for rid in pending_deque:
+                self._cache.set_error(rid, self.interrupted_text)
 
     # ------------------------------------------------------------------
     # Outbound media (image / voice / video)

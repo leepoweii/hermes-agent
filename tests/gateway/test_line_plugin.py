@@ -397,27 +397,56 @@ class TestSendRouting:
         assert "network" in result.error
 
     def test_send_pending_button_caches_response(self, adapter):
-        # Simulate that the slow-LLM postback button has fired.
+        from collections import deque
         rid = adapter._cache.register_pending("Uchat")
-        adapter._pending_buttons["Uchat"] = rid
+        adapter._pending_buttons["Uchat"] = deque([rid])
         result = asyncio.run(adapter.send("Uchat", "the answer"))
         assert result.success
-        # Response must have been cached, not pushed/replied.
         adapter._client.reply.assert_not_called()
         adapter._client.push.assert_not_called()
         assert adapter._cache.get(rid).state is State.READY
         assert adapter._cache.get(rid).payload == "the answer"
 
     def test_send_system_bypass_skips_postback_cache(self, adapter):
-        # Even with a pending button, system busy-acks must surface visibly.
+        from collections import deque
         rid = adapter._cache.register_pending("Uchat")
-        adapter._pending_buttons["Uchat"] = rid
+        adapter._pending_buttons["Uchat"] = deque([rid])
         result = asyncio.run(adapter.send("Uchat", "⚡ Interrupting current run"))
         assert result.success
-        # Bypass goes through push (no reply token stored)
         adapter._client.push.assert_called_once()
-        # And the cache entry is unchanged (still PENDING for the eventual answer)
         assert adapter._cache.get(rid).state is State.PENDING
+
+    def test_send_second_answer_queued_not_dropped(self, adapter):
+        """Second LLM answer must not be silently dropped when first slot is READY."""
+        from collections import deque
+        rid1 = adapter._cache.register_pending("Uchat")
+        adapter._cache.set_ready(rid1, "answer 1")
+        adapter._pending_buttons["Uchat"] = deque([rid1])
+
+        result = asyncio.run(adapter.send("Uchat", "answer 2"))
+
+        assert result.success
+        adapter._client.reply.assert_not_called()
+        adapter._client.push.assert_not_called()
+        assert adapter._cache.get(rid1).payload == "answer 1"
+        q = adapter._pending_buttons["Uchat"]
+        assert len(q) == 2
+        rid2 = q[1]
+        assert adapter._cache.get(rid2).state is State.READY
+        assert adapter._cache.get(rid2).payload == "answer 2"
+
+    def test_send_pending_button_uses_deque(self, adapter):
+        """First answer to a PENDING slot still routes to cache (deque version)."""
+        from collections import deque
+        rid = adapter._cache.register_pending("Uchat")
+        adapter._pending_buttons["Uchat"] = deque([rid])
+
+        result = asyncio.run(adapter.send("Uchat", "the answer"))
+        assert result.success
+        adapter._client.reply.assert_not_called()
+        adapter._client.push.assert_not_called()
+        assert adapter._cache.get(rid).state is State.READY
+        assert adapter._cache.get(rid).payload == "the answer"
 
     def test_send_caps_messages_per_call_at_five(self, adapter):
         # Build a payload that would naturally split into more than 5 LINE
