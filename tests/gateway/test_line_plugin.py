@@ -724,3 +724,112 @@ class TestAdapterInit:
         assert asyncio.run(ad.get_chat_info("U123"))["type"] == "dm"
         assert asyncio.run(ad.get_chat_info("C123"))["type"] == "group"
         assert asyncio.run(ad.get_chat_info("R123"))["type"] == "channel"
+
+
+# ---------------------------------------------------------------------------
+# 9. /check-pending command
+# ---------------------------------------------------------------------------
+
+class TestCheckPending:
+
+    @pytest.fixture
+    def adapter(self, monkeypatch):
+        monkeypatch.delenv("LINE_CHANNEL_ACCESS_TOKEN", raising=False)
+        monkeypatch.delenv("LINE_CHANNEL_SECRET", raising=False)
+        from gateway.config import PlatformConfig
+        cfg = PlatformConfig(enabled=True, extra={
+            "channel_access_token": "tok",
+            "channel_secret": "sec",
+        })
+        ad = LineAdapter(cfg)
+        ad._client = MagicMock()
+        ad._client.reply = AsyncMock()
+        ad._client.push = AsyncMock()
+        ad._client.loading = AsyncMock()
+        ad.handle_message = AsyncMock()
+        return ad
+
+    def _make_text_event(self, text, chat_id="Uchat", reply_token="rt-123"):
+        return {
+            "type": "message",
+            "replyToken": reply_token,
+            "source": {"type": "user", "userId": chat_id},
+            "message": {"type": "text", "id": "m1", "text": text},
+        }
+
+    def test_check_pending_not_forwarded_to_llm(self, adapter):
+        asyncio.run(adapter._handle_message_event(
+            self._make_text_event("/check-pending")
+        ))
+        adapter.handle_message.assert_not_called()
+
+    def test_check_pending_replies_no_pending_when_queue_empty(self, adapter):
+        asyncio.run(adapter._handle_message_event(
+            self._make_text_event("/check-pending")
+        ))
+        adapter._client.reply.assert_called_once()
+        call_messages = adapter._client.reply.call_args.args[1]
+        assert call_messages[0]["type"] == "text"
+        assert "No pending" in call_messages[0]["text"]
+
+    def test_check_pending_replies_still_working_when_only_pending(self, adapter):
+        from collections import deque
+        rid = adapter._cache.register_pending("Uchat")
+        adapter._pending_buttons["Uchat"] = deque([rid])
+
+        asyncio.run(adapter._handle_message_event(
+            self._make_text_event("/check-pending")
+        ))
+        adapter._client.reply.assert_called_once()
+        call_messages = adapter._client.reply.call_args.args[1]
+        assert call_messages[0]["type"] == "text"
+        assert "template" not in str(call_messages[0])
+
+    def test_check_pending_sends_button_for_each_ready_answer(self, adapter):
+        from collections import deque
+        rid1 = adapter._cache.register_ready("Uchat", "answer 1", question_preview="Q1")
+        rid2 = adapter._cache.register_ready("Uchat", "answer 2", question_preview="Q2")
+        adapter._pending_buttons["Uchat"] = deque([rid1, rid2])
+
+        asyncio.run(adapter._handle_message_event(
+            self._make_text_event("/check-pending", reply_token="rt-456")
+        ))
+
+        adapter._client.reply.assert_called_once()
+        token_used, messages = adapter._client.reply.call_args.args
+        assert token_used == "rt-456"
+        assert len(messages) == 2
+        assert messages[0]["type"] == "template"
+        assert messages[1]["type"] == "template"
+        data0 = json.loads(messages[0]["template"]["actions"][0]["data"])
+        data1 = json.loads(messages[1]["template"]["actions"][0]["data"])
+        assert data0["request_id"] == rid1
+        assert data1["request_id"] == rid2
+
+    def test_check_pending_uses_question_preview_as_bubble_text(self, adapter):
+        from collections import deque
+        rid = adapter._cache.register_ready("Uchat", "answer", question_preview="What time?")
+        adapter._pending_buttons["Uchat"] = deque([rid])
+
+        asyncio.run(adapter._handle_message_event(
+            self._make_text_event("/check-pending")
+        ))
+        call_messages = adapter._client.reply.call_args.args[1]
+        assert "What time?" in call_messages[0]["template"]["text"]
+
+    def test_check_pending_caps_at_five_buttons(self, adapter):
+        from collections import deque
+        rids = [adapter._cache.register_ready("Uchat", f"ans{i}") for i in range(8)]
+        adapter._pending_buttons["Uchat"] = deque(rids)
+
+        asyncio.run(adapter._handle_message_event(
+            self._make_text_event("/check-pending")
+        ))
+        call_messages = adapter._client.reply.call_args.args[1]
+        assert len(call_messages) <= 5
+
+    def test_normal_message_still_forwarded_to_llm(self, adapter):
+        asyncio.run(adapter._handle_message_event(
+            self._make_text_event("hello world")
+        ))
+        adapter.handle_message.assert_called_once()

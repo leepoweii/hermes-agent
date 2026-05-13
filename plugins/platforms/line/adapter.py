@@ -990,6 +990,9 @@ class LineAdapter(BasePlatformAdapter):
             text = msg.get("text", "") or ""
             if chat_id and text:
                 self._last_question[chat_id] = text[:160]
+            if text.strip() == "/check-pending":
+                await self._handle_check_pending(chat_id, reply_token)
+                return
         elif msg_type in ("image", "audio", "video", "file"):
             local_path = await self._download_media(message_id, msg_type)
             if local_path:
@@ -1088,6 +1091,48 @@ class LineAdapter(BasePlatformAdapter):
                 await self._client.reply(reply_token, [_text_message(self.pending_text)])
             except Exception:
                 pass
+
+    async def _handle_check_pending(self, chat_id: str, reply_token: str) -> None:
+        """Reply with Template Buttons for all READY/ERROR cached answers."""
+        if not self._client or not reply_token:
+            return
+
+        pending_deque = self._pending_buttons.get(chat_id)
+        if not pending_deque:
+            try:
+                await self._client.reply(reply_token, [_text_message("No pending answers.")])
+            except Exception as exc:
+                logger.warning("LINE: /check-pending reply failed: %s", exc)
+            return
+
+        retrievable = [
+            (rid, self._cache.get(rid))
+            for rid in pending_deque
+            if self._cache.get(rid) is not None
+            and self._cache.get(rid).state in (State.READY, State.ERROR)
+        ]
+
+        if not retrievable:
+            try:
+                await self._client.reply(reply_token, [_text_message("Still working on it...")])
+            except Exception as exc:
+                logger.warning("LINE: /check-pending still-working reply failed: %s", exc)
+            return
+
+        messages = []
+        for rid, entry in retrievable[:LINE_MAX_MESSAGES_PER_CALL]:
+            preview = (entry.question_preview or "Pending answer")[:160]
+            messages.append(
+                build_postback_button_message(preview, "Get answer", rid)
+            )
+
+        try:
+            await self._client.reply(reply_token, messages)
+            logger.info(
+                "LINE: /check-pending sent %d button(s) to %s", len(messages), chat_id
+            )
+        except Exception as exc:
+            logger.warning("LINE: /check-pending reply failed: %s", exc)
 
     async def _download_media(self, message_id: str, msg_type: str) -> Optional[str]:
         if not self._client or not message_id:
