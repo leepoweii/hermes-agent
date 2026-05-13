@@ -244,6 +244,46 @@ class TestRequestCache:
         # No longer PENDING — should not be found
         assert c.find_pending_for_chat("Ua") is None
 
+    def test_register_pending_stores_question_preview(self):
+        c = RequestCache()
+        rid = c.register_pending("Uchat", question_preview="What time is it?")
+        assert c.get(rid).question_preview == "What time is it?"
+
+    def test_register_pending_default_preview_is_empty(self):
+        c = RequestCache()
+        rid = c.register_pending("Uchat")
+        assert c.get(rid).question_preview == ""
+
+    def test_register_ready_creates_ready_entry(self):
+        c = RequestCache()
+        rid = c.register_ready("Uchat", "the answer", question_preview="q?")
+        entry = c.get(rid)
+        assert entry.state is State.READY
+        assert entry.payload == "the answer"
+        assert entry.chat_id == "Uchat"
+        assert entry.question_preview == "q?"
+
+    def test_list_retrievable_for_chat_returns_ready_and_error(self):
+        c = RequestCache()
+        rid_ready = c.register_pending("Uchat")
+        c.set_ready(rid_ready, "ans1")
+        rid_error = c.register_pending("Uchat")
+        c.set_error(rid_error, "boom")
+        rid_pending = c.register_pending("Uchat")
+        rid_other = c.register_pending("Uother")
+        c.set_ready(rid_other, "other")
+
+        results = c.list_retrievable_for_chat("Uchat")
+        rids = [r for r, _ in results]
+        assert rid_ready in rids
+        assert rid_error in rids
+        assert rid_pending not in rids
+        assert rid_other not in rids
+
+    def test_list_retrievable_for_chat_empty_when_none(self):
+        c = RequestCache()
+        assert c.list_retrievable_for_chat("Uchat") == []
+
 
 # ---------------------------------------------------------------------------
 # 6. Markdown stripping + chunking

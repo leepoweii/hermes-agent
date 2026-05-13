@@ -278,6 +278,7 @@ class _CacheEntry:
     state: State
     payload: Any = None
     chat_id: str = ""
+    question_preview: str = ""
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 
@@ -299,10 +300,34 @@ class RequestCache:
         self._ttl = ttl_seconds
         self._pending_ttl = pending_ttl_seconds
 
-    def register_pending(self, chat_id: str) -> str:
+    def register_pending(self, chat_id: str, question_preview: str = "") -> str:
         rid = str(uuid.uuid4())
-        self._entries[rid] = _CacheEntry(state=State.PENDING, chat_id=chat_id)
+        self._entries[rid] = _CacheEntry(
+            state=State.PENDING,
+            chat_id=chat_id,
+            question_preview=question_preview,
+        )
         return rid
+
+    def register_ready(self, chat_id: str, payload: Any, question_preview: str = "") -> str:
+        """Create a cache entry that starts in READY state (second answer, no button fired)."""
+        rid = str(uuid.uuid4())
+        self._entries[rid] = _CacheEntry(
+            state=State.READY,
+            chat_id=chat_id,
+            question_preview=question_preview,
+            payload=payload,
+        )
+        return rid
+
+    def list_retrievable_for_chat(self, chat_id: str) -> List[Tuple[str, "_CacheEntry"]]:
+        """Return all READY or ERROR entries for a chat, in insertion order."""
+        return [
+            (rid, entry)
+            for rid, entry in self._entries.items()
+            if entry.chat_id == chat_id
+            and entry.state in (State.READY, State.ERROR)
+        ]
 
     def get(self, request_id: str) -> Optional[_CacheEntry]:
         return self._entries.get(request_id)
