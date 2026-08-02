@@ -241,7 +241,7 @@ if curl -fsS "http://127.0.0.1:$PORT/system_stats" >/dev/null 2>&1; then
 fi
 
 # --- Step 5: Launch ---
-log "Launching ComfyUI in background on port $PORT…"
+log "Launching ComfyUI in background on port ${PORT}…"
 LAUNCH_EXTRAS=("--" "--port" "$PORT")
 if ! $COMFY_BIN "${WORKSPACE_ARG[@]}" launch --background "${LAUNCH_EXTRAS[@]}" >>"$LOG_FILE" 2>&1; then
     err "Background launch failed. Tail of log:"
